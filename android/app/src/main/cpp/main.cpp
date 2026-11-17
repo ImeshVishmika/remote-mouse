@@ -38,10 +38,10 @@ Rect inset(const Rect& rect, float amount) {
 // Values match android.content.pm.ActivityInfo:
 //   0 = SENSOR, 1 = PORTRAIT, 2 = LANDSCAPE
 void setScreenOrientation(int orientation) {
-    JNIEnv* env = SDL_AndroidGetJNIEnv();
+    JNIEnv* env = static_cast<JNIEnv*>(SDL_AndroidGetJNIEnv());
     if (env == nullptr) return;
 
-    jobject activity = SDL_AndroidGetActivity();
+    jobject activity = static_cast<jobject>(SDL_AndroidGetActivity());
     if (activity == nullptr) return;
 
     jclass cls = env->GetObjectClass(activity);
