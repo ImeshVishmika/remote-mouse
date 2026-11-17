@@ -1,0 +1,4 @@
+add_executable(protocol_test protocol_test.cpp)
+target_link_libraries(protocol_test PRIVATE mctl_protocol)
+mctl_enable_warnings(protocol_test)
+add_test(NAME protocol COMMAND protocol_test)

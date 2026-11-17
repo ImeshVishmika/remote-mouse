@@ -1,0 +1,62 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.remotemouse.app'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.remotemouse.app'
+        minSdk 24
+        // Android 15 enforces edge-to-edge for targetSdk 35, which SDL 2.30
+        // does not handle yet; 34 keeps the fullscreen layout intact.
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+
+        ndk {
+            // 64-bit phones and the x86_64 emulator.
+            abiFilters 'arm64-v8a', 'x86_64'
+        }
+
+        externalNativeBuild {
+            cmake {
+                arguments '-DANDROID_STL=c++_shared'
+                cppFlags '-std=c++17'
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            jniDebuggable true
+        }
+        release {
+            minifyEnabled false
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path file('src/main/cpp/CMakeLists.txt')
+            version '3.22.1'
+        }
+    }
+
+    sourceSets {
+        main {
+            // SDLActivity and friends, taken straight from the SDL2 checkout.
+            java.srcDirs += ['../../third_party/SDL2/android-project/app/src/main/java']
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError false
+    }
+}

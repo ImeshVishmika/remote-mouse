@@ -1,0 +1,32 @@
+# Build output
+build/
+build-*/
+out/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+
+# Fetched dependency
+third_party/
+
+# Android / Gradle
+android/.gradle/
+android/.idea/
+android/build/
+android/app/build/
+android/app/.cxx/
+android/local.properties
+android/*.iml
+*.apk
+*.aab
+
+# Editor / OS noise
+.vs/
+.vscode/
+*.user
+.DS_Store
+Thumbs.db

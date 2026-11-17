@@ -1,0 +1,13 @@
+# Keep the repository in LF so shell scripts and Gradle/CMake files behave the
+# same on Windows and on the Linux CI runner.
+* text=auto eol=lf
+
+*.sh   text eol=lf
+*.ps1  text eol=crlf
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+
+*.jar  binary
+*.png  binary
+*.jpg  binary
+*.ico  binary

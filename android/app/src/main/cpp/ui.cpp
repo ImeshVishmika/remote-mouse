@@ -1,0 +1,198 @@
+#include "ui.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+
+namespace ui {
+namespace {
+
+// 5x7 bitmap font, one byte per row, bit 4 = leftmost column.
+struct Glyph {
+    char code;
+    uint8_t rows[7];
+};
+
+constexpr Glyph kFont[] = {
+    {' ', {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}},
+    {'!', {0x04, 0x04, 0x04, 0x04, 0x04, 0x00, 0x04}},
+    {'#', {0x0A, 0x0A, 0x1F, 0x0A, 0x1F, 0x0A, 0x0A}},
+    {'%', {0x18, 0x19, 0x02, 0x04, 0x08, 0x13, 0x03}},
+    {'(', {0x02, 0x04, 0x08, 0x08, 0x08, 0x04, 0x02}},
+    {')', {0x08, 0x04, 0x02, 0x02, 0x02, 0x04, 0x08}},
+    {'*', {0x00, 0x04, 0x15, 0x0E, 0x15, 0x04, 0x00}},
+    {'+', {0x00, 0x04, 0x04, 0x1F, 0x04, 0x04, 0x00}},
+    {',', {0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x08}},
+    {'-', {0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00}},
+    {'.', {0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x0C}},
+    {'/', {0x01, 0x02, 0x02, 0x04, 0x08, 0x08, 0x10}},
+    {'0', {0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E}},
+    {'1', {0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E}},
+    {'2', {0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F}},
+    {'3', {0x1F, 0x02, 0x04, 0x02, 0x01, 0x11, 0x0E}},
+    {'4', {0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02}},
+    {'5', {0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E}},
+    {'6', {0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E}},
+    {'7', {0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08}},
+    {'8', {0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E}},
+    {'9', {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C}},
+    {':', {0x00, 0x0C, 0x0C, 0x00, 0x0C, 0x0C, 0x00}},
+    {'<', {0x02, 0x04, 0x08, 0x10, 0x08, 0x04, 0x02}},
+    {'=', {0x00, 0x00, 0x1F, 0x00, 0x1F, 0x00, 0x00}},
+    {'>', {0x08, 0x04, 0x02, 0x01, 0x02, 0x04, 0x08}},
+    {'?', {0x0E, 0x11, 0x01, 0x02, 0x04, 0x00, 0x04}},
+    {'@', {0x0E, 0x11, 0x17, 0x15, 0x17, 0x10, 0x0F}},
+    {'A', {0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11}},
+    {'B', {0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E}},
+    {'C', {0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E}},
+    {'D', {0x1C, 0x12, 0x11, 0x11, 0x11, 0x12, 0x1C}},
+    {'E', {0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F}},
+    {'F', {0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10}},
+    {'G', {0x0E, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0F}},
+    {'H', {0x11, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11}},
+    {'I', {0x0E, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E}},
+    {'J', {0x07, 0x02, 0x02, 0x02, 0x02, 0x12, 0x0C}},
+    {'K', {0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11}},
+    {'L', {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1F}},
+    {'M', {0x11, 0x1B, 0x15, 0x15, 0x11, 0x11, 0x11}},
+    {'N', {0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11}},
+    {'O', {0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E}},
+    {'P', {0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10}},
+    {'Q', {0x0E, 0x11, 0x11, 0x11, 0x15, 0x12, 0x0D}},
+    {'R', {0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11}},
+    {'S', {0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E}},
+    {'T', {0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04}},
+    {'U', {0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E}},
+    {'V', {0x11, 0x11, 0x11, 0x11, 0x11, 0x0A, 0x04}},
+    {'W', {0x11, 0x11, 0x11, 0x15, 0x15, 0x1B, 0x11}},
+    {'X', {0x11, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0x11}},
+    {'Y', {0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04}},
+    {'Z', {0x1F, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1F}},
+    {'[', {0x0E, 0x08, 0x08, 0x08, 0x08, 0x08, 0x0E}},
+    {']', {0x0E, 0x02, 0x02, 0x02, 0x02, 0x02, 0x0E}},
+    {'_', {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1F}},
+    {'\'', {0x04, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00}},
+};
+
+const Glyph* findGlyph(char raw) {
+    char code = raw;
+    if (code >= 'a' && code <= 'z') {
+        code = static_cast<char>(code - 'a' + 'A');
+    }
+    for (const Glyph& glyph : kFont) {
+        if (glyph.code == code) return &glyph;
+    }
+    for (const Glyph& glyph : kFont) {
+        if (glyph.code == '?') return &glyph;
+    }
+    return nullptr;
+}
+
+}  // namespace
+
+void fillRect(SDL_Renderer* renderer, const Rect& rect, SDL_Color color) {
+    if (renderer == nullptr || rect.w <= 0.0f || rect.h <= 0.0f) return;
+
+    SDL_Rect target;
+    target.x = static_cast<int>(std::lround(rect.x));
+    target.y = static_cast<int>(std::lround(rect.y));
+    target.w = static_cast<int>(std::lround(rect.w));
+    target.h = static_cast<int>(std::lround(rect.h));
+    if (target.w < 1 || target.h < 1) return;
+
+    SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
+    SDL_RenderFillRect(renderer, &target);
+}
+
+void fillRoundedRect(SDL_Renderer* renderer, const Rect& rect, float radius,
+                     SDL_Color color) {
+    if (renderer == nullptr || rect.w <= 1.0f || rect.h <= 1.0f) return;
+
+    const float maximum = std::min(rect.w, rect.h) * 0.5f;
+    const float r = std::max(0.0f, std::min(radius, maximum));
+
+    const int x0 = static_cast<int>(std::lround(rect.x));
+    const int y0 = static_cast<int>(std::lround(rect.y));
+    const int width = static_cast<int>(std::lround(rect.w));
+    const int height = static_cast<int>(std::lround(rect.h));
+
+    SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
+
+    for (int row = 0; row < height; ++row) {
+        const float centerY = static_cast<float>(row) + 0.5f;
+        float inset = 0.0f;
+        if (centerY < r) {
+            const float dy = r - centerY;
+            inset = r - std::sqrt(std::max(0.0f, r * r - dy * dy));
+        } else if (centerY > static_cast<float>(height) - r) {
+            const float dy = centerY - (static_cast<float>(height) - r);
+            inset = r - std::sqrt(std::max(0.0f, r * r - dy * dy));
+        }
+        const int left = x0 + static_cast<int>(std::lround(inset));
+        const int right = x0 + width - static_cast<int>(std::lround(inset));
+        if (right > left) {
+            SDL_RenderDrawLine(renderer, left, y0 + row, right - 1, y0 + row);
+        }
+    }
+}
+
+void strokeRect(SDL_Renderer* renderer, const Rect& rect, float thickness,
+                SDL_Color color) {
+    if (renderer == nullptr || rect.w <= 0.0f || rect.h <= 0.0f) return;
+    const float t = std::max(1.0f, thickness);
+
+    fillRect(renderer, Rect{rect.x, rect.y, rect.w, t}, color);
+    fillRect(renderer, Rect{rect.x, rect.y + rect.h - t, rect.w, t}, color);
+    fillRect(renderer, Rect{rect.x, rect.y, t, rect.h}, color);
+    fillRect(renderer, Rect{rect.x + rect.w - t, rect.y, t, rect.h}, color);
+}
+
+void text(SDL_Renderer* renderer, float x, float y, const std::string& value,
+          int pixelScale, SDL_Color color) {
+    if (renderer == nullptr) return;
+    const int scale = std::max(1, pixelScale);
+
+    SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
+
+    int penX = static_cast<int>(std::lround(x));
+    const int penY = static_cast<int>(std::lround(y));
+
+    for (const char raw : value) {
+        const Glyph* glyph = findGlyph(raw);
+        if (glyph != nullptr) {
+            for (int row = 0; row < 7; ++row) {
+                const uint8_t bits = glyph->rows[row];
+                if (bits == 0) continue;
+                for (int column = 0; column < 5; ++column) {
+                    if ((bits & (1u << (4 - column))) == 0) continue;
+                    SDL_Rect pixel;
+                    pixel.x = penX + column * scale;
+                    pixel.y = penY + row * scale;
+                    pixel.w = scale;
+                    pixel.h = scale;
+                    SDL_RenderFillRect(renderer, &pixel);
+                }
+            }
+        }
+        penX += 6 * scale;
+    }
+}
+
+float textWidth(const std::string& value, int pixelScale) {
+    if (value.empty()) return 0.0f;
+    const int scale = std::max(1, pixelScale);
+    return static_cast<float>((static_cast<int>(value.size()) * 6 - 1) * scale);
+}
+
+float textHeight(int pixelScale) {
+    return static_cast<float>(7 * std::max(1, pixelScale));
+}
+
+void textCentered(SDL_Renderer* renderer, const Rect& rect,
+                  const std::string& value, int pixelScale, SDL_Color color) {
+    const float x = rect.centerX() - textWidth(value, pixelScale) * 0.5f;
+    const float y = rect.centerY() - textHeight(pixelScale) * 0.5f;
+    text(renderer, x, y, value, pixelScale, color);
+}
+
+}  // namespace ui
