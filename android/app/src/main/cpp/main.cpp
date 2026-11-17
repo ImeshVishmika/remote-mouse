@@ -1,5 +1,9 @@
 #include <SDL.h>
 
+#ifdef __ANDROID__
+#include <jni.h>
+#endif
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -28,6 +32,34 @@ Rect inset(const Rect& rect, float amount) {
                 std::max(0.0f, rect.w - amount * 2.0f),
                 std::max(0.0f, rect.h - amount * 2.0f)};
 }
+
+#ifdef __ANDROID__
+// Ask the Android Activity to change its requested orientation.
+// Values match android.content.pm.ActivityInfo:
+//   0 = SENSOR, 1 = PORTRAIT, 2 = LANDSCAPE
+void setScreenOrientation(int orientation) {
+    JNIEnv* env = SDL_AndroidGetJNIEnv();
+    if (env == nullptr) return;
+
+    jobject activity = SDL_AndroidGetActivity();
+    if (activity == nullptr) return;
+
+    jclass cls = env->GetObjectClass(activity);
+    if (cls == nullptr) {
+        env->DeleteLocalRef(activity);
+        return;
+    }
+
+    jmethodID mid =
+        env->GetMethodID(cls, "setRequestedOrientation", "(I)V");
+    if (mid != nullptr) {
+        env->CallVoidMethod(activity, mid, orientation);
+    }
+
+    env->DeleteLocalRef(cls);
+    env->DeleteLocalRef(activity);
+}
+#endif  // __ANDROID__
 
 std::string fitText(const std::string& value, float maxWidth, int scale) {
     if (maxWidth <= 0.0f) return std::string();
@@ -236,6 +268,10 @@ bool App::init() {
         width_ = 420;
         height_ = 840;
     }
+
+    // Apply the initial rotation mode so the app starts in the chosen
+    // orientation (Auto follows the device sensor).
+    applyRotationMode();
 
     SDL_DisableScreenSaver();
     discovery_.start(mctl::kDefaultDiscoveryPort);
@@ -717,17 +753,23 @@ void App::layoutKeypad(float top, float bottom, Action digitAction,
 }
 
 void App::applyRotationMode() {
+#ifdef __ANDROID__
+    int orientation = 0;  // SENSOR
     switch (rotationMode_) {
         case RotationMode::Auto:
-            SDL_SetHint(SDL_HINT_ORIENTATIONS, "sensor");
+            orientation = 0;   // SCREEN_ORIENTATION_SENSOR
             break;
         case RotationMode::Portrait:
-            SDL_SetHint(SDL_HINT_ORIENTATIONS, "portrait");
+            orientation = 1;   // SCREEN_ORIENTATION_PORTRAIT
             break;
         case RotationMode::Landscape:
-            SDL_SetHint(SDL_HINT_ORIENTATIONS, "landscape");
+            orientation = 2;   // SCREEN_ORIENTATION_LANDSCAPE
             break;
     }
+    setScreenOrientation(orientation);
+#else
+    (void)0;
+#endif
 }
 
 std::string App::rotationLabel() const {
