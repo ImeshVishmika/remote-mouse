@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Remote Mouse</string>
+    <string name="rotate_auto">AUTO</string>
+    <string name="rotate_portrait">PORT</string>
+    <string name="rotate_landscape">LAND</string>
 </resources>

@@ -57,6 +57,13 @@ enum class Action {
     SensitivityDown,
     SensitivityUp,
     GoBack,
+    Rotate,
+};
+
+enum class RotationMode {
+    Auto,
+    Portrait,
+    Landscape,
 };
 
 enum class Look {
@@ -103,6 +110,9 @@ private:
     void layoutPad();
     void layoutKeypad(float top, float bottom, Action digitAction,
                       Action backAction, bool includeDot);
+
+    void applyRotationMode();
+    std::string rotationLabel() const;
 
     void render();
     void renderDiscover();
@@ -161,6 +171,7 @@ private:
     std::string pinServerName_;
 
     float sensitivity_ = 1.5f;
+    RotationMode rotationMode_ = RotationMode::Auto;
     float moveAccX_ = 0.0f;
     float moveAccY_ = 0.0f;
 
@@ -188,7 +199,7 @@ bool App::init() {
     SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
     SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
-    SDL_SetHint(SDL_HINT_ORIENTATIONS, "Portrait");
+    SDL_SetHint(SDL_HINT_ORIENTATIONS, "sensor");
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
@@ -620,6 +631,15 @@ void App::layoutPad() {
     close.look = Look::Ghost;
     buttons_.push_back(close);
 
+    Button rotate;
+    rotate.rect = Rect{width_ - m - 44.0f * u_ - 52.0f * u_, 12.0f * u_,
+                       44.0f * u_, 44.0f * u_};
+    rotate.action = Action::Rotate;
+    rotate.label = rotationLabel();
+    rotate.textScale = fsBody_;
+    rotate.look = Look::Ghost;
+    buttons_.push_back(rotate);
+
     const float headerHeight = 54.0f * u_;
     const float footerHeight = 44.0f * u_;
     const float footerTop = height_ - m - footerHeight;
@@ -694,6 +714,32 @@ void App::layoutKeypad(float top, float bottom, Action digitAction,
 
         buttons_.push_back(key);
     }
+}
+
+void App::applyRotationMode() {
+    switch (rotationMode_) {
+        case RotationMode::Auto:
+            SDL_SetHint(SDL_HINT_ORIENTATIONS, "sensor");
+            break;
+        case RotationMode::Portrait:
+            SDL_SetHint(SDL_HINT_ORIENTATIONS, "portrait");
+            break;
+        case RotationMode::Landscape:
+            SDL_SetHint(SDL_HINT_ORIENTATIONS, "landscape");
+            break;
+    }
+}
+
+std::string App::rotationLabel() const {
+    switch (rotationMode_) {
+        case RotationMode::Auto:
+            return "AUTO";
+        case RotationMode::Portrait:
+            return "PORT";
+        case RotationMode::Landscape:
+            return "LAND";
+    }
+    return "AUTO";
 }
 
 // ---------------------------------------------------------------------------
@@ -855,6 +901,14 @@ void App::activate(const Button& button) {
             sensitivity_ =
                 std::min(kMaxSensitivity, sensitivity_ + kSensitivityStep);
             break;
+
+        case Action::Rotate: {
+            rotationMode_ = static_cast<RotationMode>(
+                (static_cast<int>(rotationMode_) + 1) %
+                static_cast<int>(RotationMode::Landscape) + 1);
+            applyRotationMode();
+            break;
+        }
 
         case Action::GoBack:
             goBack();
