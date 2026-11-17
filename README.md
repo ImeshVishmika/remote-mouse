@@ -113,6 +113,33 @@ remote_mouse_server.exe [options]
 Console keys while the server runs: `q` quit, `p` print the PIN again,
 `s` status, `k` kick the connected device, `h` help. `Ctrl+C` also stops it.
 
+### Desktop GUI (`--gui`)
+
+Pass `--gui` to launch a native Windows window instead of the console:
+
+```powershell
+build-release\desktop\Release\remote_mouse_server.exe --gui --pin 123456
+```
+
+The GUI provides:
+
+* **Start / Stop** the server with one click.
+* **PIN field** — edit the 6-digit pairing PIN live; it takes effect for new
+  connections immediately.
+* **Server name** — informational display of the server name shown to phones.
+* **Status** — shows whether the server is waiting, running, or connected to a
+  device (with its IP:port).
+* **Local IPv4** — the addresses to type into the phone if UDP discovery is
+  blocked.
+* **Blocked devices** — select a peer in the list and click **Block** to reject
+  its connections without showing the PIN prompt, or **Unblock** to allow it
+  again. The block list is cleared when the server stops.
+* **Log window** — live server output (pairing, input events, disconnects).
+
+All GUI controls are also available in console mode via keys (`p`, `s`, `k`)
+and command-line flags (`--pin`, `--name`, `--dry-run`, `--no-discovery`,
+`--verbose`).
+
 The phone can already scale movement, so the default `--sensitivity 1.0` is
 usually right; lower it if the cursor feels too fast, raise it if it crawls.
 
@@ -266,7 +293,8 @@ probes and every input event.
 
 ```
 shared/protocol.h            wire format, framing, discovery codec (header-only)
-desktop/src/                 Windows server: sockets, pairing, input injection
+desktop/src/                 Windows server: sockets, pairing, input injection,
+                             console + native GUI (`--gui`)
 android/app/src/main/cpp/    SDL2 app: UI, gestures, TCP/UDP client
 android/app/src/main/java/   MainActivity (extends SDLActivity)
 tools/mouse_sim.cpp          protocol client used for end-to-end tests

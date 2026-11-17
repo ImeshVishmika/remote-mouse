@@ -22,6 +22,18 @@
 namespace logx {
 namespace {
 
+// Ring of recent log lines. Guarded by outputMutex() so producers (any thread)
+// and consumers (the GUI timer) never race.
+std::deque<std::string>& logQueue() {
+    static std::deque<std::string> queue;
+    return queue;
+}
+
+constexpr size_t kMaxLogLines = 2000;
+
+}  // namespace
+namespace {
+
 const char* levelTag(Level level) {
     switch (level) {
         case Level::Info: return "INFO";
@@ -100,6 +112,35 @@ void writeV(Level level, const char* format, std::va_list args) {
         std::fprintf(stdout, "%s %s %s\n", line.c_str(), levelTag(level), message);
     }
     std::fflush(stdout);
+
+    // Keep a copy for GUI consumers. Level prefix so the GUI can colour rows.
+    std::string entry = levelTag(level);
+    entry += " ";
+    entry += line;
+    entry += " ";
+    entry += message;
+    auto& queue = logQueue();
+    queue.push_back(entry);
+    while (queue.size() > kMaxLogLines) queue.pop_front();
+}
+
+void pushLog(std::string line) {
+    std::lock_guard<std::mutex> lock(outputMutex());
+    auto& queue = logQueue();
+    queue.push_back(std::move(line));
+    while (queue.size() > kMaxLogLines) queue.pop_front();
+}
+
+std::vector<std::string> drainLogs() {
+    std::lock_guard<std::mutex> lock(outputMutex());
+    std::vector<std::string> snapshot;
+    auto& queue = logQueue();
+    snapshot.reserve(queue.size());
+    while (!queue.empty()) {
+        snapshot.push_back(std::move(queue.front()));
+        queue.pop_front();
+    }
+    return snapshot;
 }
 
 void info(const char* format, ...) {

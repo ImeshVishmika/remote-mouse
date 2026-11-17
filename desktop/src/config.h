@@ -12,6 +12,7 @@ struct ServerConfig {
     bool dryRun = false;
     bool discovery = true;
     bool verbose = false;
+    bool gui = false;
 };
 
 enum class ConfigResult {

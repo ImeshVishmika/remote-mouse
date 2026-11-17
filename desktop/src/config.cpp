@@ -109,6 +109,8 @@ ConfigResult parseArgs(int argc, char** argv, ServerConfig& config,
             config.discovery = false;
         } else if (arg == "--verbose" || arg == "-v") {
             config.verbose = true;
+        } else if (arg == "--gui") {
+            config.gui = true;
         } else {
             error = "unknown option: " + arg;
             return ConfigResult::Error;
@@ -131,6 +133,7 @@ void printUsage(const char* executable) {
         "  --sensitivity F     cursor speed multiplier (0.1-10.0, default 1.0)\n"
         "  --dry-run           log input events without moving the real cursor\n"
         "  --no-discovery      do not answer UDP discovery probes\n"
+        "  --gui               run the native desktop UI instead of the console\n"
         "  --verbose, -v       log every input event\n"
         "  --version           print the protocol version and exit\n"
         "  --help, -h          show this help\n"

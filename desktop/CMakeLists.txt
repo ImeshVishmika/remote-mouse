@@ -6,6 +6,7 @@ add_executable(remote_mouse_server
     src/config.cpp
     src/log.cpp
     src/platform.cpp
+    src/gui.cpp
 )
 
 target_link_libraries(remote_mouse_server PRIVATE mctl_net)
@@ -16,6 +17,8 @@ mctl_enable_warnings(remote_mouse_server)
 if(WIN32)
     # GetAdaptersAddresses() for the "Local IPv4" banner line.
     target_link_libraries(remote_mouse_server PRIVATE iphlpapi)
+    # Native Win32 controls for the --gui mode.
+    target_link_libraries(remote_mouse_server PRIVATE user32)
 endif()
 
 if(MINGW)

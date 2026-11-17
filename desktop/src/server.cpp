@@ -30,16 +30,16 @@ unsigned msgTypeValue(mctl::MsgType type) {
 
 Server::Server(ServerConfig config)
     : config_(std::move(config)),
-      mouse_(config_.dryRun, config_.sensitivity) {}
+      mouse_(config_.dryRun, config_.sensitivity),
+      winsock_() {
+    if (!winsock_.ok()) {
+        logx::error("Winsock startup failed: %s",
+                    net::errorString(winsock_.error()).c_str());
+    }
+}
 
 Server::~Server() {
-    requestStop();
-    if (sessionThread_.joinable()) sessionThread_.join();
-    if (discoveryThread_.joinable()) discoveryThread_.join();
-    if (discovery_) discovery_->close();
-    if (consoleThread_.joinable()) consoleThread_.join();
-    net::closeSocket(listener_);
-    listener_ = kInvalidSocket;
+    stop();
 }
 
 void Server::requestStop() {
@@ -48,22 +48,22 @@ void Server::requestStop() {
     }
 }
 
-bool Server::stopping() const {
-    return stop_.load() || platformQuitRequested();
-}
-
-int Server::run() {
-    net::WinsockGuard winsock;
-    if (!winsock.ok()) {
-        logx::error("Winsock startup failed: %s",
-                    net::errorString(winsock.error()).c_str());
-        return 1;
+bool Server::start(std::string& error) {
+    if (running_.exchange(true)) {
+        return true;  // already running
     }
 
-    std::string error;
+    stop_ = false;
+
+    if (!winsock_.ok()) {
+        error = "Winsock startup failed: " + net::errorString(winsock_.error());
+        running_ = false;
+        return false;
+    }
+
     if (!openListener(error)) {
-        logx::error("%s", error.c_str());
-        return 1;
+        running_ = false;
+        return false;
     }
 
     if (config_.discovery) {
@@ -79,11 +79,25 @@ int Server::run() {
     }
 
     printBanner();
-    consoleThread_ = std::thread(&Server::consoleLoop, this);
 
-    acceptLoop();
+    // Accept connections on a dedicated thread so start() returns immediately.
+    acceptThread_ = std::thread(&Server::acceptLoop, this);
+
+    return true;
+}
+
+void Server::stop() {
+    if (!running_.exchange(false)) {
+        return;  // not running
+    }
 
     requestStop();
+
+    // Close the listener from this thread to wake select() inside acceptLoop.
+    net::closeSocket(listener_);
+    listener_ = kInvalidSocket;
+
+    if (acceptThread_.joinable()) acceptThread_.join();
     if (sessionThread_.joinable()) sessionThread_.join();
     if (discoveryThread_.joinable()) discoveryThread_.join();
     if (discovery_) discovery_->close();
@@ -91,7 +105,82 @@ int Server::run() {
 
     net::closeSocket(listener_);
     listener_ = kInvalidSocket;
+
     logx::info("Server stopped.");
+}
+
+bool Server::isRunning() const {
+    return running_.load();
+}
+
+std::string Server::status() const {
+    std::string state;
+    {
+        std::lock_guard<std::mutex> lock(clientMutex_);
+        state = (client_ != kInvalidSocket) ? ("connected to " + clientPeer_)
+                                            : "waiting for a device";
+    }
+    return "Running - " + state;
+}
+
+std::string Server::connectedPeer() const {
+    std::lock_guard<std::mutex> lock(clientMutex_);
+    return clientPeer_;
+}
+
+std::vector<std::string> Server::localAddresses() const {
+    return platformLocalIpv4();
+}
+
+void Server::setPin(uint32_t pin) {
+    config_.pin = pin;
+}
+
+uint32_t Server::pin() const {
+    return config_.pin;
+}
+
+bool Server::stopping() const {
+    return stop_.load() || platformQuitRequested();
+}
+
+bool Server::isBlocked(const std::string& peer) const {
+    std::lock_guard<std::mutex> lock(blockMutex_);
+    return blockedPeers_.count(peer) != 0;
+}
+
+void Server::blockPeer(const std::string& peer) {
+    std::lock_guard<std::mutex> lock(blockMutex_);
+    blockedPeers_.insert(peer);
+    logx::event("Blocked %s", peer.c_str());
+}
+
+void Server::unblockPeer(const std::string& peer) {
+    std::lock_guard<std::mutex> lock(blockMutex_);
+    blockedPeers_.erase(peer);
+    logx::event("Unblocked %s", peer.c_str());
+}
+
+std::vector<std::string> Server::blockedPeers() const {
+    std::lock_guard<std::mutex> lock(blockMutex_);
+    return std::vector<std::string>(blockedPeers_.begin(), blockedPeers_.end());
+}
+
+int Server::run() {
+    std::string error;
+    if (!start(error)) {
+        logx::error("%s", error.c_str());
+        return 1;
+    }
+
+    consoleThread_ = std::thread(&Server::consoleLoop, this);
+
+    // Block until the console (or Ctrl+C) requests a stop.
+    while (!stopping()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    }
+
+    stop();
     return 0;
 }
 
@@ -175,6 +264,13 @@ void Server::acceptLoop() {
         }
 
         const std::string peer = net::peerToString(address);
+
+        // Reject blocked peers immediately.
+        if (isBlocked(peer)) {
+            logx::warn("Rejected %s: blocked by user", peer.c_str());
+            net::closeSocket(client);
+            continue;
+        }
 
         if (busy_.load()) {
             Connection rejected(client);
@@ -477,13 +573,7 @@ void Server::printPin() const {
 }
 
 void Server::printStatus() const {
-    std::string state;
-    {
-        std::lock_guard<std::mutex> lock(clientMutex_);
-        state = (client_ != kInvalidSocket) ? ("connected to " + clientPeer_)
-                                            : "waiting for a device";
-    }
-    logx::info("Status: %s", state.c_str());
+    logx::info("Status: %s", status().c_str());
     logx::info("PIN %s | sensitivity %.2fx | %s", formatPin(config_.pin).c_str(),
                static_cast<double>(config_.sensitivity),
                config_.dryRun ? "dry run" : "live input");
