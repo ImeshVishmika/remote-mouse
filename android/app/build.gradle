@@ -8,7 +8,7 @@ android {
 
     defaultConfig {
         applicationId 'com.remotemouse.app'
-        minSdk 24
+        minSdk 19
         // Android 15 enforces edge-to-edge for targetSdk 35, which SDL 2.30
         // does not handle yet; 34 keeps the fullscreen layout intact.
         targetSdk 34
@@ -17,7 +17,7 @@ android {
 
         ndk {
             // 64-bit phones and the x86_64 emulator.
-            abiFilters 'arm64-v8a', 'x86_64'
+            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86_64'
         }
 
         externalNativeBuild {
