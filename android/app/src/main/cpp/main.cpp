@@ -90,6 +90,8 @@ enum class Action {
     SensitivityUp,
     GoBack,
     Rotate,
+    OpenTouchpad,
+    BackToMenu,
 };
 
 enum class RotationMode {
@@ -104,6 +106,14 @@ enum class Look {
     Secondary,
     Ghost,
     Danger,
+    Tile,
+};
+
+// Icon drawn inside a square Look::Tile button.
+enum class Icon {
+    None,
+    Touchpad,
+    Plus,
 };
 
 struct Button {
@@ -115,6 +125,7 @@ struct Button {
     std::string data;
     int textScale = 2;
     Look look = Look::Secondary;
+    Icon icon = Icon::None;
     bool enabled = true;
 };
 
@@ -122,6 +133,7 @@ enum class Screen {
     Discover,
     Manual,
     Pin,
+    Menu,
     Pad,
 };
 
@@ -139,6 +151,7 @@ private:
     void layoutDiscover();
     void layoutManual();
     void layoutPin();
+    void layoutMenu();
     void layoutPad();
     void layoutKeypad(float top, float bottom, Action digitAction,
                       Action backAction, bool includeDot);
@@ -150,6 +163,7 @@ private:
     void renderDiscover();
     void renderManual();
     void renderPin();
+    void renderMenu();
     void renderPad();
     void drawButtons();
 
@@ -164,6 +178,7 @@ private:
     void flushPad();
     void showDiscover(const std::string& status = std::string(),
                       bool isError = false);
+    void showMenu();
     void beginConnect(const std::string& ip, uint16_t port);
 
     SDL_Window* window_ = nullptr;
@@ -353,6 +368,17 @@ void App::showDiscover(const std::string& status, bool isError) {
     pinError_.clear();
 }
 
+void App::showMenu() {
+    screen_ = Screen::Menu;
+    hasPointer_ = false;
+    hasPressedButton_ = false;
+
+    pad_.cancel();
+    pad_.takeEvents();
+    moveAccX_ = 0.0f;
+    moveAccY_ = 0.0f;
+}
+
 void App::beginConnect(const std::string& ip, uint16_t port) {
     discovery_.stop();
 
@@ -379,10 +405,17 @@ bool App::goBack() {
         case Screen::Manual:
             showDiscover();
             return true;
-        case Screen::Pin:
-        case Screen::Pad:
+        case Screen::Menu:
             net_.disconnect();
-            showDiscover(screen_ == Screen::Pad ? "DISCONNECTED" : std::string());
+            showDiscover("DISCONNECTED");
+            return true;
+        case Screen::Pin:
+            net_.disconnect();
+            showDiscover();
+            return true;
+        case Screen::Pad:
+            // Going back keeps the connection; the menu is the hub.
+            showMenu();
             return true;
     }
     return false;
@@ -403,13 +436,7 @@ void App::wireEvents() {
                 break;
 
             case NetEvent::Type::AuthOk:
-                screen_ = Screen::Pad;
-                pad_.cancel();
-                pad_.takeEvents();
-                moveAccX_ = 0.0f;
-                moveAccY_ = 0.0f;
-                hasPointer_ = false;
-                hasPressedButton_ = false;
+                showMenu();
                 break;
 
             case NetEvent::Type::AuthFailed:
@@ -521,6 +548,9 @@ void App::updateLayout() {
             break;
         case Screen::Pin:
             layoutPin();
+            break;
+        case Screen::Menu:
+            layoutMenu();
             break;
         case Screen::Pad:
             layoutPad();
@@ -655,8 +685,61 @@ void App::layoutPin() {
                  false);
 }
 
+void App::layoutMenu() {
+    const float m = 18.0f * u_;
+
+    Button close;
+    close.rect = Rect{width_ - m - 44.0f * u_, 12.0f * u_, 44.0f * u_,
+                      44.0f * u_};
+    close.action = Action::Disconnect;
+    close.label = "X";
+    close.textScale = fsBody_ + 1;
+    close.look = Look::Ghost;
+    buttons_.push_back(close);
+
+    // Square tiles in a two-column grid, centred on screen. The tile size is
+    // clamped by the available height so landscape does not overflow.
+    const float gap = 14.0f * u_;
+    const float gridTop = 92.0f * u_;
+    const float gridBottom = height_ - m;
+    const float columnWidth = (width_ - 2.0f * m - gap) * 0.5f;
+    const float tileSize =
+        std::min(columnWidth, std::max(0.0f, gridBottom - gridTop));
+    const float gridWidth = tileSize * 2.0f + gap;
+    const float gridX = (width_ - gridWidth) * 0.5f;
+
+    Button touchpad;
+    touchpad.rect = Rect{gridX, gridTop, tileSize, tileSize};
+    touchpad.action = Action::OpenTouchpad;
+    touchpad.label = "TOUCHPAD";
+    touchpad.sub = "MOVE + CLICK";
+    touchpad.textScale = fsBody_;
+    touchpad.look = Look::Tile;
+    touchpad.icon = Icon::Touchpad;
+    buttons_.push_back(touchpad);
+
+    // Placeholder so the grid already shows where new controls will go.
+    Button more;
+    more.rect = Rect{gridX + tileSize + gap, gridTop, tileSize, tileSize};
+    more.label = "MORE";
+    more.sub = "COMING SOON";
+    more.textScale = fsBody_;
+    more.look = Look::Tile;
+    more.icon = Icon::Plus;
+    more.enabled = false;
+    buttons_.push_back(more);
+}
+
 void App::layoutPad() {
     const float m = 14.0f * u_;
+
+    Button back;
+    back.rect = Rect{m, 12.0f * u_, 44.0f * u_, 44.0f * u_};
+    back.action = Action::BackToMenu;
+    back.label = "<";
+    back.textScale = fsTitle_;
+    back.look = Look::Ghost;
+    buttons_.push_back(back);
 
     Button close;
     close.rect = Rect{width_ - m - 44.0f * u_, 12.0f * u_, 44.0f * u_,
@@ -945,12 +1028,26 @@ void App::activate(const Button& button) {
             break;
 
         case Action::Rotate: {
-            rotationMode_ = static_cast<RotationMode>(
-                (static_cast<int>(rotationMode_) + 1) %
-                static_cast<int>(RotationMode::Landscape) + 1);
+            rotationMode_ =
+                static_cast<RotationMode>((static_cast<int>(rotationMode_) + 1) %
+                                          3);
             applyRotationMode();
             break;
         }
+
+        case Action::OpenTouchpad:
+            screen_ = Screen::Pad;
+            hasPointer_ = false;
+            hasPressedButton_ = false;
+            pad_.cancel();
+            pad_.takeEvents();
+            moveAccX_ = 0.0f;
+            moveAccY_ = 0.0f;
+            break;
+
+        case Action::BackToMenu:
+            showMenu();
+            break;
 
         case Action::GoBack:
             goBack();
@@ -1061,6 +1158,9 @@ void App::render() {
             break;
         case Screen::Pin:
             renderPin();
+            break;
+        case Screen::Menu:
+            renderMenu();
             break;
         case Screen::Pad:
             renderPad();
@@ -1232,22 +1332,47 @@ void App::renderPin() {
         ui::colors::textMuted);
 }
 
+void App::renderMenu() {
+    const float m = 18.0f * u_;
+    const std::string name =
+        net_.serverName().empty() ? "REMOTE PC" : net_.serverName();
+
+    const float dot = 7.0f * u_;
+    const float statusY = 24.0f * u_;
+    ui::fillRoundedRect(
+        renderer_,
+        Rect{m, statusY + (ui::textHeight(fsTiny_) - dot) * 0.5f, dot, dot},
+        dot * 0.5f, ui::colors::success);
+    ui::text(renderer_, m + dot + 6.0f * u_, statusY, "CONNECTED", fsTiny_,
+             ui::colors::success);
+
+    const float nameY = statusY + ui::textHeight(fsTiny_) + 8.0f * u_;
+    ui::text(renderer_, m, nameY,
+             fitText(name, width_ - 2.0f * m - 52.0f * u_, fsTitle_), fsTitle_,
+             ui::colors::text);
+
+    ui::text(renderer_, m,
+             nameY + ui::textHeight(fsTitle_) + 8.0f * u_, "CHOOSE A CONTROL",
+             fsTiny_, ui::colors::textMuted);
+}
+
 void App::renderPad() {
     const float m = 14.0f * u_;
+    const float nameX = m + 52.0f * u_;
 
     const std::string name =
         net_.serverName().empty() ? "REMOTE PC" : net_.serverName();
-    ui::text(renderer_, m, 15.0f * u_,
-             fitText(name, width_ - 2.0f * m - 52.0f * u_, fsBody_), fsBody_,
+    ui::text(renderer_, nameX, 15.0f * u_,
+             fitText(name, width_ - nameX - m - 104.0f * u_, fsBody_), fsBody_,
              ui::colors::text);
 
     const float subY = 15.0f * u_ + ui::textHeight(fsBody_) + 5.0f * u_;
     const float dot = 7.0f * u_;
     ui::fillRoundedRect(
         renderer_,
-        Rect{m, subY + (ui::textHeight(fsTiny_) - dot) * 0.5f, dot, dot},
+        Rect{nameX, subY + (ui::textHeight(fsTiny_) - dot) * 0.5f, dot, dot},
         dot * 0.5f, ui::colors::success);
-    ui::text(renderer_, m + dot + 6.0f * u_, subY, "PAIRED", fsTiny_,
+    ui::text(renderer_, nameX + dot + 6.0f * u_, subY, "PAIRED", fsTiny_,
              ui::colors::success);
 
     // Touch surface.
@@ -1364,6 +1489,12 @@ void App::drawButtons() {
                 borderColor = ui::colors::danger;
                 textColor = ui::colors::danger;
                 break;
+            case Look::Tile:
+                fill = pressed ? ui::colors::surfaceRaised
+                               : ui::colors::surface;
+                borderColor =
+                    pressed ? ui::colors::accent : ui::colors::border;
+                break;
         }
 
         if (!button.enabled) {
@@ -1406,6 +1537,65 @@ void App::drawButtons() {
                 Rect{button.rect.x + button.rect.w - padding - dot,
                      button.rect.centerY() - dot * 0.5f, dot, dot},
                 dot * 0.5f, ui::colors::success);
+        } else if (button.look == Look::Tile) {
+            const SDL_Color iconColor =
+                button.enabled ? ui::colors::accent : ui::colors::textMuted;
+            const float iconSize =
+                std::min(button.rect.w * 0.34f, button.rect.h * 0.28f);
+            const float iconX = button.rect.centerX() - iconSize * 0.5f;
+            const float iconY = button.rect.y + button.rect.h * 0.20f;
+
+            if (button.icon == Icon::Touchpad) {
+                const float padH = iconSize * 0.74f;
+                const float iconRadius = iconSize * 0.22f;
+                const Rect padRect{iconX, iconY, iconSize, padH};
+                ui::fillRoundedRect(renderer_, padRect, iconRadius, iconColor);
+                ui::fillRoundedRect(renderer_, inset(padRect, 2.0f * u_),
+                                    std::max(0.0f, iconRadius - 2.0f * u_),
+                                    fill);
+
+                const float cursor = std::max(3.0f * u_, iconSize * 0.16f);
+                ui::fillRoundedRect(
+                    renderer_,
+                    Rect{padRect.centerX() - cursor * 0.5f,
+                         padRect.centerY() - cursor * 0.5f, cursor, cursor},
+                    cursor * 0.5f, iconColor);
+            } else if (button.icon == Icon::Plus) {
+                const float thickness = std::max(2.0f * u_, iconSize * 0.10f);
+                const float plusCenterY = iconY + iconSize * 0.37f;
+                ui::fillRoundedRect(
+                    renderer_,
+                    Rect{iconX + iconSize * 0.12f,
+                         plusCenterY - thickness * 0.5f, iconSize * 0.76f,
+                         thickness},
+                    thickness * 0.5f, iconColor);
+                ui::fillRoundedRect(
+                    renderer_,
+                    Rect{iconX + iconSize * 0.5f - thickness * 0.5f,
+                         plusCenterY - iconSize * 0.26f, thickness,
+                         iconSize * 0.52f},
+                    thickness * 0.5f, iconColor);
+            }
+
+            const float labelY = button.rect.y + button.rect.h * 0.66f;
+            const float textLimit = button.rect.w - 16.0f * u_;
+            ui::textCentered(
+                renderer_,
+                Rect{button.rect.x, labelY, button.rect.w,
+                     ui::textHeight(button.textScale)},
+                fitText(button.label, textLimit, button.textScale),
+                button.textScale, textColor);
+
+            if (!button.sub.empty()) {
+                ui::textCentered(
+                    renderer_,
+                    Rect{button.rect.x,
+                         labelY + ui::textHeight(button.textScale) +
+                             5.0f * u_,
+                         button.rect.w, ui::textHeight(fsTiny_)},
+                    fitText(button.sub, textLimit, fsTiny_), fsTiny_,
+                    ui::colors::textMuted);
+            }
         } else if (!button.label.empty()) {
             ui::textCentered(renderer_, button.rect, button.label,
                              button.textScale, textColor);

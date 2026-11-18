@@ -219,7 +219,9 @@ browser are all this route needs.
 2. Open the app. It broadcasts a discovery probe every 1.5 s.
 3. Tap the PC in **AVAILABLE PCS**.
 4. Type the PIN on the keypad. Six digits submit automatically.
-5. The touchpad appears once the server accepts the PIN.
+5. The **control menu** appears once the server accepts the PIN.
+6. Tap the **TOUCHPAD** tile to start driving the cursor. `<` returns to the
+   menu without dropping the connection.
 
 | Gesture | Action |
 | --- | --- |
@@ -229,11 +231,13 @@ browser are all this route needs.
 | Two-finger tap | Right click |
 | Two-finger vertical drag | Scroll (natural direction) |
 | Three-finger tap | Middle click |
+| `AUTO` / `PORT` / `LAND` | Cycle the screen rotation mode |
 | `SENS -` / `SENS +` | Lower/raise cursor speed (0.6×–3.0×) |
+| `<` in the top-left | Back to the control menu |
 | `X` in the top-right | Disconnect |
 
-Android's back button goes back one screen (disconnecting when leaving the
-touchpad) and exits from the server list.
+Android's back button goes back one screen (touchpad → menu → disconnect) and
+exits from the server list.
 
 Each server restart generates a new PIN. Use `--pin` for a fixed one while
 testing.
