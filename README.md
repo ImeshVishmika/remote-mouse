@@ -22,6 +22,8 @@ the same network.
 * Two-finger tap = right click, three-finger tap = middle click.
 * Two-finger vertical drag = natural scrolling.
 * Adjustable cursor sensitivity on the touchpad screen.
+* Every screen follows the device's auto-rotation; the touchpad can also be
+  locked to portrait or landscape.
 * Zero-config discovery by UDP broadcast, plus a manual IPv4 entry fallback.
 * 6-digit PIN pairing, maximum 3 attempts per connection.
 * Latency indicator (ping/pong every 2 s) and automatic disconnect detection.
@@ -231,7 +233,7 @@ browser are all this route needs.
 | Two-finger tap | Right click |
 | Two-finger vertical drag | Scroll (natural direction) |
 | Three-finger tap | Middle click |
-| `AUTO` / `PORT` / `LAND` | Cycle the screen rotation mode |
+| `AUTO` / `PORT` / `LAND` | Touchpad orientation: follow the sensor (default) or lock it to portrait/landscape |
 | `SENS -` / `SENS +` | Lower/raise cursor speed (0.6×–3.0×) |
 | `<` in the top-left | Back to the control menu |
 | `X` in the top-right | Disconnect |

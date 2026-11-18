@@ -34,9 +34,14 @@ Rect inset(const Rect& rect, float amount) {
 }
 
 #ifdef __ANDROID__
+// android.content.pm.ActivityInfo screen orientation values.
+// Note: LANDSCAPE is 0 and PORTRAIT is 1, so using 0 for "sensor" would
+// lock the whole activity to landscape.
+constexpr int kOrientSensor = 4;           // SCREEN_ORIENTATION_SENSOR
+constexpr int kOrientSensorLandscape = 6;  // SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+constexpr int kOrientSensorPortrait = 7;   // SCREEN_ORIENTATION_SENSOR_PORTRAIT
+
 // Ask the Android Activity to change its requested orientation.
-// Values match android.content.pm.ActivityInfo:
-//   0 = SENSOR, 1 = PORTRAIT, 2 = LANDSCAPE
 void setScreenOrientation(int orientation) {
     JNIEnv* env = static_cast<JNIEnv*>(SDL_AndroidGetJNIEnv());
     if (env == nullptr) return;
@@ -195,6 +200,7 @@ private:
     int fsHuge_ = 6;
 
     Screen screen_ = Screen::Discover;
+    Screen orientationScreen_ = Screen::Discover;
     std::vector<Button> buttons_;
     Button pressedButton_;
     bool hasPressedButton_ = false;
@@ -246,7 +252,10 @@ bool App::init() {
     SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
     SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
-    SDL_SetHint(SDL_HINT_ORIENTATIONS, "sensor");
+    // SDL reads this only when the window is created. The live orientation is
+    // controlled through JNI in applyRotationMode().
+    SDL_SetHint(SDL_HINT_ORIENTATIONS,
+                "LandscapeLeft,LandscapeRight,Portrait");
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
@@ -556,6 +565,13 @@ void App::updateLayout() {
             layoutPad();
             break;
     }
+
+    // Orientation follows the screen: everything is sensor-driven except the
+    // touchpad, which uses the mode chosen with the AUTO / PORT / LAND button.
+    if (screen_ != orientationScreen_) {
+        orientationScreen_ = screen_;
+        applyRotationMode();
+    }
 }
 
 void App::layoutDiscover() {
@@ -837,17 +853,21 @@ void App::layoutKeypad(float top, float bottom, Action digitAction,
 
 void App::applyRotationMode() {
 #ifdef __ANDROID__
-    int orientation = 0;  // SENSOR
-    switch (rotationMode_) {
-        case RotationMode::Auto:
-            orientation = 0;   // SCREEN_ORIENTATION_SENSOR
-            break;
-        case RotationMode::Portrait:
-            orientation = 1;   // SCREEN_ORIENTATION_PORTRAIT
-            break;
-        case RotationMode::Landscape:
-            orientation = 2;   // SCREEN_ORIENTATION_LANDSCAPE
-            break;
+    // Every screen follows the device sensor. Only the touchpad honours the
+    // AUTO / PORT / LAND choice from the pad header.
+    int orientation = kOrientSensor;
+    if (screen_ == Screen::Pad) {
+        switch (rotationMode_) {
+            case RotationMode::Auto:
+                orientation = kOrientSensor;
+                break;
+            case RotationMode::Portrait:
+                orientation = kOrientSensorPortrait;
+                break;
+            case RotationMode::Landscape:
+                orientation = kOrientSensorLandscape;
+                break;
+        }
     }
     setScreenOrientation(orientation);
 #else
