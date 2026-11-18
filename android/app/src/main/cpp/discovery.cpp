@@ -2,8 +2,8 @@
 
 #include <arpa/inet.h>
 #include <fcntl.h>
-#include <ifaddrs.h>
 #include <net/if.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -29,45 +29,56 @@ void appendTarget(std::vector<in_addr_t>& targets, in_addr_t address) {
     }
 }
 
-std::vector<in_addr_t> discoveryTargets() {
+std::vector<in_addr_t> discoveryTargets(int socket) {
     std::vector<in_addr_t> targets;
     targets.push_back(htonl(INADDR_BROADCAST));
 
     // 255.255.255.255 can follow the wrong default interface when a VPN or
     // mobile data connection is active. Also probe every local IPv4 subnet,
     // including the hotspot interface when the phone itself is the hotspot.
-    ifaddrs* interfaces = nullptr;
-    if (getifaddrs(&interfaces) == 0) {
-        for (const ifaddrs* item = interfaces; item != nullptr;
-             item = item->ifa_next) {
-            if (item->ifa_addr == nullptr ||
-                item->ifa_addr->sa_family != AF_INET) {
-                continue;
-            }
-            if ((item->ifa_flags & IFF_UP) == 0 ||
-                (item->ifa_flags & IFF_LOOPBACK) != 0) {
+    // ioctl works on old Android versions where getifaddrs is unavailable.
+    ifreq interfaces[64];
+    ifconf config{};
+    config.ifc_len = sizeof(interfaces);
+    config.ifc_req = interfaces;
+
+    if (ioctl(socket, SIOCGIFCONF, &config) == 0) {
+        const int count = std::min(
+            64, static_cast<int>(config.ifc_len / sizeof(ifreq)));
+
+        for (int i = 0; i < count; ++i) {
+            const ifreq& item = interfaces[i];
+            if (item.ifr_addr.sa_family != AF_INET) continue;
+
+            ifreq flagsRequest = item;
+            if (ioctl(socket, SIOCGIFFLAGS, &flagsRequest) != 0) continue;
+
+            const short flags = flagsRequest.ifr_flags;
+            if ((flags & IFF_UP) == 0 || (flags & IFF_LOOPBACK) != 0) {
                 continue;
             }
 
             in_addr_t broadcast = 0;
-            if ((item->ifa_flags & IFF_BROADCAST) != 0 &&
-                item->ifa_broadaddr != nullptr &&
-                item->ifa_broadaddr->sa_family == AF_INET) {
+            ifreq broadcastRequest = item;
+            if ((flags & IFF_BROADCAST) != 0 &&
+                ioctl(socket, SIOCGIFBRDADDR, &broadcastRequest) == 0) {
                 const auto* address = reinterpret_cast<const sockaddr_in*>(
-                    item->ifa_broadaddr);
+                    &broadcastRequest.ifr_broadaddr);
                 broadcast = address->sin_addr.s_addr;
-            } else if (item->ifa_netmask != nullptr &&
-                       item->ifa_netmask->sa_family == AF_INET) {
-                const auto* address =
-                    reinterpret_cast<const sockaddr_in*>(item->ifa_addr);
-                const auto* mask =
-                    reinterpret_cast<const sockaddr_in*>(item->ifa_netmask);
-                broadcast = address->sin_addr.s_addr | ~mask->sin_addr.s_addr;
+            } else {
+                ifreq maskRequest = item;
+                if (ioctl(socket, SIOCGIFNETMASK, &maskRequest) == 0) {
+                    const auto* address =
+                        reinterpret_cast<const sockaddr_in*>(&item.ifr_addr);
+                    const auto* mask = reinterpret_cast<const sockaddr_in*>(
+                        &maskRequest.ifr_netmask);
+                    broadcast =
+                        address->sin_addr.s_addr | ~mask->sin_addr.s_addr;
+                }
             }
 
             appendTarget(targets, broadcast);
         }
-        freeifaddrs(interfaces);
     }
 
     // Loopback keeps emulators and on-device test servers discoverable.
@@ -149,7 +160,7 @@ void DiscoveryClient::sendProbe(uint64_t now) {
     target.sin_family = AF_INET;
     target.sin_port = htons(port_);
 
-    for (const in_addr_t address : discoveryTargets()) {
+    for (const in_addr_t address : discoveryTargets(socket_)) {
         target.sin_addr.s_addr = address;
         sendto(socket_, request.data(), request.size(), 0,
                reinterpret_cast<const sockaddr*>(&target), sizeof(target));
