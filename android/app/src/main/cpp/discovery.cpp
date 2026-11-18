@@ -2,6 +2,8 @@
 
 #include <arpa/inet.h>
 #include <fcntl.h>
+#include <ifaddrs.h>
+#include <net/if.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -18,6 +20,59 @@ uint64_t nowMs() {
     return static_cast<uint64_t>(
         duration_cast<milliseconds>(steady_clock::now().time_since_epoch())
             .count());
+}
+
+void appendTarget(std::vector<in_addr_t>& targets, in_addr_t address) {
+    if (address == 0) return;
+    if (std::find(targets.begin(), targets.end(), address) == targets.end()) {
+        targets.push_back(address);
+    }
+}
+
+std::vector<in_addr_t> discoveryTargets() {
+    std::vector<in_addr_t> targets;
+    targets.push_back(htonl(INADDR_BROADCAST));
+
+    // 255.255.255.255 can follow the wrong default interface when a VPN or
+    // mobile data connection is active. Also probe every local IPv4 subnet,
+    // including the hotspot interface when the phone itself is the hotspot.
+    ifaddrs* interfaces = nullptr;
+    if (getifaddrs(&interfaces) == 0) {
+        for (const ifaddrs* item = interfaces; item != nullptr;
+             item = item->ifa_next) {
+            if (item->ifa_addr == nullptr ||
+                item->ifa_addr->sa_family != AF_INET) {
+                continue;
+            }
+            if ((item->ifa_flags & IFF_UP) == 0 ||
+                (item->ifa_flags & IFF_LOOPBACK) != 0) {
+                continue;
+            }
+
+            in_addr_t broadcast = 0;
+            if ((item->ifa_flags & IFF_BROADCAST) != 0 &&
+                item->ifa_broadaddr != nullptr &&
+                item->ifa_broadaddr->sa_family == AF_INET) {
+                const auto* address = reinterpret_cast<const sockaddr_in*>(
+                    item->ifa_broadaddr);
+                broadcast = address->sin_addr.s_addr;
+            } else if (item->ifa_netmask != nullptr &&
+                       item->ifa_netmask->sa_family == AF_INET) {
+                const auto* address =
+                    reinterpret_cast<const sockaddr_in*>(item->ifa_addr);
+                const auto* mask =
+                    reinterpret_cast<const sockaddr_in*>(item->ifa_netmask);
+                broadcast = address->sin_addr.s_addr | ~mask->sin_addr.s_addr;
+            }
+
+            appendTarget(targets, broadcast);
+        }
+        freeifaddrs(interfaces);
+    }
+
+    // Loopback keeps emulators and on-device test servers discoverable.
+    appendTarget(targets, htonl(INADDR_LOOPBACK));
+    return targets;
 }
 
 }  // namespace
@@ -94,15 +149,11 @@ void DiscoveryClient::sendProbe(uint64_t now) {
     target.sin_family = AF_INET;
     target.sin_port = htons(port_);
 
-    // The LAN broadcast everybody listens on...
-    target.sin_addr.s_addr = htonl(INADDR_BROADCAST);
-    sendto(socket_, request.data(), request.size(), 0,
-           reinterpret_cast<const sockaddr*>(&target), sizeof(target));
-
-    // ...plus loopback so an emulator or a server on this device still shows up.
-    target.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    sendto(socket_, request.data(), request.size(), 0,
-           reinterpret_cast<const sockaddr*>(&target), sizeof(target));
+    for (const in_addr_t address : discoveryTargets()) {
+        target.sin_addr.s_addr = address;
+        sendto(socket_, request.data(), request.size(), 0,
+               reinterpret_cast<const sockaddr*>(&target), sizeof(target));
+    }
 
     lastProbeMs_ = now;
 }
