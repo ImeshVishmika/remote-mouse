@@ -13,6 +13,7 @@
 #include "discovery.h"
 #include "net.h"
 #include "protocol.h"
+#include "server_share.h"
 #include "touchpad.h"
 #include "ui.h"
 
@@ -97,6 +98,7 @@ enum class Action {
     Rotate,
     OpenTouchpad,
     BackToMenu,
+    OpenServerShare,
 };
 
 enum class RotationMode {
@@ -140,6 +142,7 @@ enum class Screen {
     Pin,
     Menu,
     Pad,
+    Share,
 };
 
 class App {
@@ -158,6 +161,7 @@ private:
     void layoutPin();
     void layoutMenu();
     void layoutPad();
+    void layoutShare();
     void layoutKeypad(float top, float bottom, Action digitAction,
                       Action backAction, bool includeDot);
 
@@ -170,6 +174,7 @@ private:
     void renderPin();
     void renderMenu();
     void renderPad();
+    void renderShare();
     void drawButtons();
 
     void pointerDown(float x, float y, Sint64 id);
@@ -212,6 +217,7 @@ private:
 
     NetClient net_;
     DiscoveryClient discovery_;
+    ServerShare share_;
     Touchpad pad_;
     std::string deviceName_ = "ANDROID TOUCHPAD";
 
@@ -242,6 +248,9 @@ private:
     float pinPromptY_ = 0.0f;
     float pinMessageY_ = 0.0f;
     float pinAttemptsY_ = 0.0f;
+
+    std::vector<std::string> shareUrls_;
+    uint64_t shareUrlsUpdatedMs_ = 0;
 };
 
 // ---------------------------------------------------------------------------
@@ -303,6 +312,7 @@ bool App::init() {
 }
 
 void App::shutdown() {
+    share_.stop();
     discovery_.stop();
     net_.disconnect();
     if (renderer_ != nullptr) {
@@ -348,6 +358,12 @@ void App::frame() {
     net_.poll();
     wireEvents();
     flushPad();
+
+    if (screen_ == Screen::Share &&
+        nowMs() - shareUrlsUpdatedMs_ >= 2000) {
+        shareUrls_ = share_.urls();
+        shareUrlsUpdatedMs_ = nowMs();
+    }
 
     // A network event or a button may have changed the screen.
     updateLayout();
@@ -412,6 +428,7 @@ bool App::goBack() {
         case Screen::Discover:
             return false;
         case Screen::Manual:
+        case Screen::Share:
             showDiscover();
             return true;
         case Screen::Menu:
@@ -564,6 +581,9 @@ void App::updateLayout() {
         case Screen::Pad:
             layoutPad();
             break;
+        case Screen::Share:
+            layoutShare();
+            break;
     }
 
     // Orientation follows the screen: everything is sensor-driven except the
@@ -622,10 +642,21 @@ void App::layoutDiscover() {
 
     hiddenServers_ = static_cast<int>(servers.size()) - visible;
 
+    const float buttonWidth = (width_ - 2.0f * m - gap) * 0.5f;
+
+    Button setup;
+    setup.rect = Rect{m, manualY, buttonWidth, manualHeight};
+    setup.action = Action::OpenServerShare;
+    setup.label = "PC SETUP";
+    setup.textScale = fsBody_;
+    setup.look = Look::Ghost;
+    buttons_.push_back(setup);
+
     Button manual;
-    manual.rect = Rect{m, manualY, width_ - 2.0f * m, manualHeight};
+    manual.rect = Rect{m + buttonWidth + gap, manualY, buttonWidth,
+                       manualHeight};
     manual.action = Action::OpenManual;
-    manual.label = "ENTER IP MANUALLY";
+    manual.label = "MANUAL IP";
     manual.textScale = fsBody_;
     manual.look = Look::Ghost;
     buttons_.push_back(manual);
@@ -801,6 +832,29 @@ void App::layoutPad() {
     plus.textScale = fsTitle_;
     plus.look = Look::Ghost;
     buttons_.push_back(plus);
+}
+
+void App::layoutShare() {
+    const float m = 18.0f * u_;
+
+    Button back;
+    back.rect = Rect{m, 18.0f * u_, 46.0f * u_, 46.0f * u_};
+    back.action = Action::GoBack;
+    back.label = "<";
+    back.textScale = fsTitle_;
+    back.look = Look::Ghost;
+    buttons_.push_back(back);
+
+    if (!share_.running()) {
+        Button retry;
+        retry.rect = Rect{m, height_ - m - 50.0f * u_, width_ - 2.0f * m,
+                          50.0f * u_};
+        retry.action = Action::OpenServerShare;
+        retry.label = "RETRY";
+        retry.textScale = fsBody_;
+        retry.look = Look::Primary;
+        buttons_.push_back(retry);
+    }
 }
 
 void App::layoutKeypad(float top, float bottom, Action digitAction,
@@ -1069,6 +1123,15 @@ void App::activate(const Button& button) {
             showMenu();
             break;
 
+        case Action::OpenServerShare:
+            if (!share_.running()) share_.start();
+            shareUrls_ = share_.urls();
+            shareUrlsUpdatedMs_ = nowMs();
+            screen_ = Screen::Share;
+            hasPointer_ = false;
+            hasPressedButton_ = false;
+            break;
+
         case Action::GoBack:
             goBack();
             break;
@@ -1094,10 +1157,19 @@ void App::handleEvent(const SDL_Event& event) {
             // Never leave a drag latched on the PC while we are suspended.
             pad_.cancel();
             flushPad();
+            // A native thread is not a foreground service, so do not advertise
+            // downloads while Android may suspend or kill this process.
+            share_.stop();
+            shareUrls_.clear();
             break;
 
         case SDL_APP_DIDENTERFOREGROUND:
             net_.resume();
+            if (screen_ == Screen::Share) {
+                share_.start();
+                shareUrls_ = share_.urls();
+                shareUrlsUpdatedMs_ = nowMs();
+            }
             break;
 
         case SDL_FINGERDOWN:
@@ -1185,6 +1257,9 @@ void App::render() {
         case Screen::Pad:
             renderPad();
             break;
+        case Screen::Share:
+            renderShare();
+            break;
     }
 
     drawButtons();
@@ -1244,7 +1319,7 @@ void App::renderDiscover() {
         Rect{listArea_.x, centerY + 4.0f * u_, listArea_.w,
              ui::textHeight(fsTiny_)},
         discovery_.running() ? "START REMOTE_MOUSE_SERVER ON THE PC"
-                             : "TAP \"ENTER IP MANUALLY\" BELOW",
+                             : "USE MANUAL IP BELOW",
         fsTiny_, ui::colors::textMuted);
 
     ui::textCentered(
@@ -1468,6 +1543,96 @@ void App::renderPad() {
              width_ - m - ui::textWidth(latencyText, fsTiny_),
              centerY - ui::textHeight(fsTiny_) * 0.5f, latencyText, fsTiny_,
              latencyColor);
+}
+
+void App::renderShare() {
+    const float m = 18.0f * u_;
+
+    ui::text(renderer_, m + 60.0f * u_,
+             18.0f * u_ + (46.0f * u_ - ui::textHeight(fsBody_)) * 0.5f,
+             "PC SERVER", fsBody_, ui::colors::text);
+
+    const bool ready = share_.running();
+    const float statusY = 18.0f * u_ + 46.0f * u_ + 20.0f * u_;
+    const float dot = 7.0f * u_;
+    const SDL_Color statusColor =
+        ready ? ui::colors::success : ui::colors::danger;
+    ui::fillRoundedRect(
+        renderer_,
+        Rect{m, statusY + (ui::textHeight(fsTiny_) - dot) * 0.5f, dot, dot},
+        dot * 0.5f, statusColor);
+    const std::string status =
+        ready ? std::string("READY - NO INTERNET NEEDED")
+              : (share_.error().empty() ? std::string("DOWNLOAD SERVER STOPPED")
+                                        : share_.error());
+    ui::text(renderer_, m + dot + 6.0f * u_, statusY,
+             fitText(status, width_ - 2.0f * m - dot - 6.0f * u_, fsTiny_),
+             fsTiny_, statusColor);
+
+    const float cardY = statusY + ui::textHeight(fsTiny_) + 10.0f * u_;
+    const Rect card{m, cardY, width_ - 2.0f * m, 64.0f * u_};
+    ui::fillRoundedRect(renderer_, card, 14.0f * u_,
+                        ready ? ui::colors::accentDim : ui::colors::border);
+    ui::fillRoundedRect(renderer_, inset(card, 2.0f * u_), 12.0f * u_,
+                        ui::colors::surface);
+
+    ui::text(renderer_, card.x + 12.0f * u_, card.y + 9.0f * u_,
+             ready ? "OPEN THIS ADDRESS ON THE PC" : "SETUP UNAVAILABLE",
+             fsTiny_, ui::colors::textMuted);
+
+    const std::string url =
+        !ready ? std::string("TAP RETRY BELOW")
+               : (shareUrls_.empty()
+                      ? std::string("NO LOCAL WIFI ADDRESS FOUND")
+                      : shareUrls_.front());
+    int urlScale = fsBody_;
+    const float urlLimit = card.w - 24.0f * u_;
+    if (ui::textWidth(url, urlScale) > urlLimit) urlScale = fsSmall_;
+    if (ui::textWidth(url, urlScale) > urlLimit) urlScale = fsTiny_;
+    ui::textCentered(
+        renderer_,
+        Rect{card.x + 12.0f * u_, card.y + 28.0f * u_, card.w - 24.0f * u_,
+             26.0f * u_},
+        fitText(url, urlLimit, urlScale), urlScale,
+        ready ? ui::colors::accent : ui::colors::textMuted);
+
+    if (!ready) return;
+
+    static const char* const steps[] = {
+        "1  CONNECT THE PC TO THE SAME WIFI OR HOTSPOT",
+        "2  OPEN A BROWSER ON THE PC",
+        "3  TYPE THE ADDRESS ABOVE",
+        "4  DOWNLOAD AND OPEN THE SERVER",
+        "5  ALLOW NETWORK ACCESS IF WINDOWS ASKS",
+    };
+
+    const float footerY = height_ - m - ui::textHeight(fsTiny_);
+    const float stepsBottom = footerY - ui::textHeight(fsTiny_) - 12.0f * u_;
+    float y = card.y + card.h + 14.0f * u_;
+    float gap = 9.0f * u_;
+    const float needed = 5.0f * ui::textHeight(fsSmall_) + 4.0f * gap;
+    if (y + needed > stepsBottom) gap = 3.0f * u_;
+
+    for (const char* step : steps) {
+        if (y + ui::textHeight(fsSmall_) > stepsBottom) break;
+        ui::text(renderer_, m, y, fitText(step, width_ - 2.0f * m, fsSmall_),
+                 fsSmall_, ui::colors::text);
+        y += ui::textHeight(fsSmall_) + gap;
+    }
+
+    char sizeText[64];
+    std::snprintf(sizeText, sizeof(sizeText), "%.2f MB",
+                  static_cast<double>(share_.payloadSize()) /
+                      (1024.0 * 1024.0));
+    const std::string fileText =
+        std::string("REMOTE_MOUSE_SERVER.EXE - ") + sizeText;
+    ui::text(renderer_, m, footerY - ui::textHeight(fsTiny_) - 7.0f * u_,
+             fitText(fileText, width_ - 2.0f * m, fsTiny_), fsTiny_,
+             ui::colors::textMuted);
+    ui::text(renderer_, m, footerY,
+             fitText("GO BACK IS OK; KEEP THE APP OPEN WHILE DOWNLOADING",
+                     width_ - 2.0f * m, fsTiny_),
+             fsTiny_, ui::colors::textMuted);
 }
 
 void App::drawButtons() {

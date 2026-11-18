@@ -9,13 +9,16 @@ on:
     branches: [main]
     paths:
       - 'android/**'
+      - 'desktop/**'
       - 'shared/**'
       - 'scripts/**'
       - '.github/workflows/android.yml'
   pull_request:
     paths:
       - 'android/**'
+      - 'desktop/**'
       - 'shared/**'
+      - 'scripts/**'
   workflow_dispatch:
 
 permissions:
@@ -65,11 +68,29 @@ jobs:
       - name: Fetch SDL2 2.30.9
         run: bash scripts/fetch-sdl2.sh
 
+      - name: Set up Zig 0.13.0
+        run: |
+          curl -fsSL --retry 3 \
+            https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz \
+            -o "$RUNNER_TEMP/zig.tar.xz"
+          tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/zig-linux-x86_64-0.13.0" >> "$GITHUB_PATH"
+
+      - name: Bundle Windows server in APK
+        run: bash scripts/package-android-server.sh
+
       - name: Build debug APK
         working-directory: android
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon --stacktrace assembleDebug
+
+      - name: Verify APK server asset
+        run: |
+          unzip -p android/app/build/outputs/apk/debug/app-debug.apk \
+            assets/remote_mouse_server.exe > "$RUNNER_TEMP/packaged-server.exe"
+          cmp android/app/src/main/assets/remote_mouse_server.exe \
+            "$RUNNER_TEMP/packaged-server.exe"
 
       - name: Collect APK
         run: |

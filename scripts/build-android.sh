@@ -12,6 +12,9 @@ if [ ! -f "$ROOT/third_party/SDL2/CMakeLists.txt" ]; then
     exit 1
 fi
 
+# The phone's offline PC SETUP page serves this generated APK asset.
+bash "$ROOT/scripts/package-android-server.sh"
+
 cd "$ROOT/android"
 ./gradlew "$TASK"
 

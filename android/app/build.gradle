@@ -60,3 +60,21 @@ android {
         abortOnError false
     }
 }
+
+// PC SETUP serves this executable directly from the APK. Never silently build
+// an app with a missing or empty payload when packaging was forgotten.
+tasks.register('verifyBundledWindowsServer') {
+    doLast {
+        def serverAsset = file('src/main/assets/remote_mouse_server.exe')
+        if (!serverAsset.isFile() || serverAsset.length() == 0) {
+            throw new GradleException(
+                'The offline PC server is missing. Run ' +
+                'scripts/package-android-server.sh (macOS/Linux) or ' +
+                'scripts\\package-android-server.ps1 (Windows) first.')
+        }
+    }
+}
+
+tasks.named('preBuild').configure {
+    dependsOn tasks.named('verifyBundledWindowsServer')
+}

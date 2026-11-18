@@ -32,6 +32,7 @@ add_library(main SHARED
     main.cpp
     discovery.cpp
     net.cpp
+    server_share.cpp
     touchpad.cpp
     ui.cpp
 )
@@ -44,6 +45,7 @@ target_include_directories(main PRIVATE
 target_link_libraries(main PRIVATE
     SDL2::SDL2
     SDL2::SDL2main
+    android
     log
 )
 

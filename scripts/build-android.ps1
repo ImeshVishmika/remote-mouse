@@ -2,7 +2,8 @@
 # Usage:  powershell -ExecutionPolicy Bypass -File scripts\build-android.ps1 [-Variant Debug|Release]
 param(
     [ValidateSet('Debug', 'Release')]
-    [string]$Variant = 'Debug'
+    [string]$Variant = 'Debug',
+    [string]$Zig = 'zig'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -13,6 +14,9 @@ $android = Join-Path $root 'android'
 if (-not (Test-Path (Join-Path $root 'third_party\SDL2\CMakeLists.txt'))) {
     throw "SDL2 is missing. Run scripts\fetch-sdl2.ps1 first."
 }
+
+# The phone's offline PC SETUP page serves this generated APK asset.
+& (Join-Path $PSScriptRoot 'package-android-server.ps1') -Zig $Zig
 
 Push-Location $android
 try {

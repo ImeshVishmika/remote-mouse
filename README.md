@@ -25,6 +25,8 @@ the same network.
 * Every screen follows the device's auto-rotation; the touchpad can also be
   locked to portrait or landscape.
 * Zero-config discovery by UDP broadcast, plus a manual IPv4 entry fallback.
+* Offline **PC SETUP** page: download the bundled Windows server from the phone
+  over local WiFi/hotspot, with no internet connection.
 * 6-digit PIN pairing, maximum 3 attempts per connection.
 * Latency indicator (ping/pong every 2 s) and automatic disconnect detection.
 * Server runs without a window; console keys for status, PIN, kick and quit.
@@ -50,7 +52,10 @@ the same network.
 * The phone and the PC on the same WiFi/LAN.
 
 SDL2 is **not** vendored. The scripts fetch release `2.30.9` into
-`third_party/SDL2`, which the Android build expects.
+`third_party/SDL2`, which the Android build expects. Local Android builds also
+need **Zig 0.13.0** on `PATH` to cross-compile the Windows server embedded in
+the APK; the PowerShell build accepts `-Zig C:\path\to\zig.exe`. Cloud builds
+install the pinned Zig version automatically.
 
 ## Quick start
 
@@ -67,6 +72,26 @@ build-release\desktop\Release\remote_mouse_server.exe
 
 Then build and install the APK (see below), open **Remote Mouse**, tap the PC
 name that appears, and type the PIN.
+
+### Install the PC server without internet
+
+The APK contains `remote_mouse_server.exe`, so a new PC does not need to
+download anything from the internet:
+
+1. Connect the PC to the same WiFi network as the phone, or to the phone's
+   hotspot.
+2. On the phone's server-list screen, tap **PC SETUP**.
+3. On the PC, open a browser and type the address shown on the phone, for
+   example `http://192.168.9.180:47825`.
+4. Click **DOWNLOAD SERVER**, then open `remote_mouse_server.exe`. Run it with
+   `--gui` from a terminal if you prefer the desktop control window.
+5. Allow local-network access if Windows Firewall asks, then return to the app
+   and pair normally.
+
+The page and file are transferred directly between the phone and PC on TCP
+port **47825**. You can go back to the server list while downloading, but keep
+the app in the foreground; Android may suspend the download server when the app
+is backgrounded.
 
 ## Build the Windows server
 
@@ -160,19 +185,27 @@ netsh advfirewall firewall add rule name="Remote Mouse UDP" dir=in action=allow 
 ### Android Studio (recommended)
 
 1. Run `scripts\fetch-sdl2.ps1` (or `scripts/fetch-sdl2.sh`).
-2. Open the **`android`** folder (not the repository root) in Android Studio.
-3. Accept/install SDK 35, the NDK and CMake 3.22.1 when prompted.
-4. Press **Run** with the phone connected over USB.
+2. Run `scripts\package-android-server.ps1` (or
+   `scripts/package-android-server.sh`) with Zig 0.13.0 available. This creates
+   the offline server asset; Gradle fails with an actionable error if it is
+   missing.
+3. Open the **`android`** folder (not the repository root) in Android Studio.
+4. Accept/install SDK 35, the NDK and CMake 3.22.1 when prompted.
+5. Press **Run** with the phone connected over USB.
 
 ### Command line
 
 ```powershell
-cd android
-.\gradlew.bat assembleDebug
-adb install -r app\build\outputs\apk\debug\app-debug.apk
+powershell -ExecutionPolicy Bypass -File scripts\build-android.ps1
+adb install -r android\app\build\outputs\apk\debug\app-debug.apk
 ```
 
-On macOS/Linux use `./gradlew assembleDebug` (run `chmod +x gradlew` once).
+On macOS/Linux use `scripts/build-android.sh`. These wrappers fetch neither
+SDL2 nor Zig; run the SDL2 fetch script first and install Zig 0.13.0. They build
+the current Windows server, place it in `android/app/src/main/assets`, and then
+invoke Gradle. If invoking Gradle directly, run the matching
+`package-android-server` script first.
+
 Gradle 8.9 is downloaded by the wrapper on first use; JDK 17 must be on
 `JAVA_HOME` or `PATH`.
 
@@ -193,7 +226,9 @@ the emulator; on a physical phone the ARM64 one is used.
 
 No local SDK is required. Push the repository to GitHub and the
 `.github/workflows/android.yml` workflow builds `app-debug.apk` on a hosted
-runner (platform 35, NDK 27.0.12077973, CMake 3.22.1, JDK 17):
+runner (platform 35, NDK 27.0.12077973, CMake 3.22.1, JDK 17). It also uses
+Zig 0.13.0 to build and embed the current Windows server, then verifies that
+the exact executable is present in the APK:
 
 ```powershell
 git init
@@ -247,7 +282,7 @@ testing.
 ### Manual IP
 
 If broadcasts are blocked (guest WiFi, VLAN, some routers), tap
-**ENTER IP MANUALLY**, type the PC's IPv4 address and press **CONNECT**. The
+**MANUAL IP**, type the PC's IPv4 address and press **CONNECT**. The
 server prints its addresses in the `Local IPv4` line at startup (or run
 `ipconfig` on the PC). Manual mode assumes the default TCP port 47824; if you
 changed `--port`, use discovery instead.
@@ -301,11 +336,12 @@ probes and every input event.
 shared/protocol.h            wire format, framing, discovery codec (header-only)
 desktop/src/                 Windows server: sockets, pairing, input injection,
                              console + native GUI (`--gui`)
-android/app/src/main/cpp/    SDL2 app: UI, gestures, TCP/UDP client
+android/app/src/main/cpp/    SDL2 app: UI, gestures, TCP/UDP client, offline
+                             Windows-server HTTP download on TCP 47825
 android/app/src/main/java/   MainActivity (extends SDLActivity)
 tools/mouse_sim.cpp          protocol client used for end-to-end tests
 tests/protocol_test.cpp      framing/codec unit tests
-scripts/                     SDL2 fetch + build helpers
+scripts/                     SDL2 fetch, build + Windows-server APK packaging
 docs/PROTOCOL.md             byte-level protocol reference
 ```
 

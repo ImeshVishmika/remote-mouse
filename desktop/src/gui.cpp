@@ -1,8 +1,10 @@
 #include "gui.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <sstream>
 #include <string>
+#include <utility>
 
 #include "log.h"
 
