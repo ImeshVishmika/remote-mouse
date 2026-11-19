@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "protocol.h"
+#include "utf8.h"
 
 namespace {
 
@@ -47,6 +48,24 @@ void testMoveGoldenBytes() {
     // 300 as little-endian int16
     CHECK(frame[10] == 0x2C);
     CHECK(frame[11] == 0x01);
+}
+
+void testKeyboardGoldenBytes() {
+    const std::vector<uint8_t> text = mctl::makeText("A");
+    CHECK(text.size() == mctl::kHeaderSize + 3);
+    CHECK(text[5] == static_cast<uint8_t>(mctl::MsgType::Text));
+    CHECK(text[6] == 3);
+    CHECK(text[7] == 0);
+    CHECK(text[8] == 1);
+    CHECK(text[9] == 0);
+    CHECK(text[10] == 'A');
+
+    const std::vector<uint8_t> key = mctl::makeKey(mctl::KeyCode::Backspace);
+    CHECK(key.size() == mctl::kHeaderSize + 1);
+    CHECK(key[5] == static_cast<uint8_t>(mctl::MsgType::Key));
+    CHECK(key[6] == 1);
+    CHECK(key[7] == 0);
+    CHECK(key[8] == static_cast<uint8_t>(mctl::KeyCode::Backspace));
 }
 
 void testRoundTrips() {
@@ -118,6 +137,35 @@ void testRoundTrips() {
         CHECK(dy == 3);
     }
     {
+        const std::string expected = "Hello, \xE4\xB8\x96\xE7\x95\x8C \xF0\x9F\x98\x80";
+        const std::vector<uint8_t> frame = mctl::makeText(expected);
+        mctl::FrameParser parser;
+        parser.push(frame.data(), frame.size());
+        mctl::Frame out;
+        CHECK(parser.next(out) == mctl::ParseStatus::Ok);
+        CHECK(out.type == mctl::MsgType::Text);
+
+        std::string text;
+        CHECK(mctl::parseText(out, text));
+        CHECK(text == expected);
+    }
+    {
+        for (uint8_t value = static_cast<uint8_t>(mctl::KeyCode::Backspace);
+             value <= static_cast<uint8_t>(mctl::KeyCode::Right); ++value) {
+            const std::vector<uint8_t> frame =
+                mctl::makeKey(static_cast<mctl::KeyCode>(value));
+            mctl::FrameParser parser;
+            parser.push(frame.data(), frame.size());
+            mctl::Frame out;
+            CHECK(parser.next(out) == mctl::ParseStatus::Ok);
+            CHECK(out.type == mctl::MsgType::Key);
+
+            mctl::KeyCode key = mctl::KeyCode::Backspace;
+            CHECK(mctl::parseKey(out, key));
+            CHECK(static_cast<uint8_t>(key) == value);
+        }
+    }
+    {
         const std::vector<uint8_t> frame = mctl::makePing(0xA1B2C3D4u);
         mctl::FrameParser parser;
         parser.push(frame.data(), frame.size());
@@ -143,6 +191,29 @@ void testRoundTrips() {
         CHECK(info.code == static_cast<uint8_t>(mctl::ErrorCode::Busy));
         CHECK(info.message == "already connected");
     }
+}
+
+void testAndroidTextNormalization() {
+    const std::string high = "\xED\xA0\xBD";
+    const std::string low = "\xED\xB8\x80";
+    const std::string emoji = "\xF0\x9F\x98\x80";
+    uint16_t pending = 0;
+
+    CHECK(mctl::normalizeAndroidText(high + low, pending) == emoji);
+    CHECK(pending == 0);
+    CHECK(mctl::normalizeAndroidText(emoji, pending) == emoji);
+    CHECK(pending == 0);
+    CHECK(mctl::normalizeAndroidText("caf\xC3\xA9", pending) == "caf\xC3\xA9");
+
+    // SDL_TEXTINPUT holds 31 bytes plus NUL. This paste puts the high surrogate
+    // at the end of one event and the low surrogate in the next event.
+    const std::string prefix(28, 'A');
+    const std::string first = mctl::normalizeAndroidText(prefix + high, pending);
+    CHECK(first == prefix);
+    CHECK(pending == 0xD83D);
+    const std::string second = mctl::normalizeAndroidText(low, pending);
+    CHECK(second == emoji);
+    CHECK(pending == 0);
 }
 
 void testParserIncremental() {
@@ -226,6 +297,27 @@ void testTruncatedPayloads() {
     CHECK(mctl::parseButton(button, buttonInfo));
     CHECK(buttonInfo.pressed);
 
+    mctl::Frame text;
+    text.type = mctl::MsgType::Text;
+    text.payload = {0x02, 0x00, 'a'};
+    std::string utf8;
+    CHECK(!mctl::parseText(text, utf8));
+
+    text.payload = {0x01, 0x00, 'a', 'b'};
+    CHECK(!mctl::parseText(text, utf8));
+    text.payload = {0x00, 0x00};
+    CHECK(!mctl::parseText(text, utf8));
+
+    mctl::Frame key;
+    key.type = mctl::MsgType::Key;
+    key.payload = {0};
+    mctl::KeyCode keyCode = mctl::KeyCode::Backspace;
+    CHECK(!mctl::parseKey(key, keyCode));
+    key.payload = {9};
+    CHECK(!mctl::parseKey(key, keyCode));
+    key.payload = {static_cast<uint8_t>(mctl::KeyCode::Enter), 0};
+    CHECK(!mctl::parseKey(key, keyCode));
+
     // Declared string length larger than the remaining payload.
     mctl::Frame oversized;
     oversized.type = mctl::MsgType::Auth;
@@ -300,7 +392,9 @@ void testClamping() {
 
 int main() {
     testMoveGoldenBytes();
+    testKeyboardGoldenBytes();
     testRoundTrips();
+    testAndroidTextNormalization();
     testParserIncremental();
     testParserRejectsBadInput();
     testTruncatedPayloads();

@@ -81,6 +81,38 @@ std::string fitText(const std::string& value, float maxWidth, int scale) {
     return out + "...";
 }
 
+bool remoteKeyForScancode(SDL_Scancode scancode, mctl::KeyCode& key) {
+    switch (scancode) {
+        case SDL_SCANCODE_BACKSPACE:
+            key = mctl::KeyCode::Backspace;
+            return true;
+        case SDL_SCANCODE_RETURN:
+        case SDL_SCANCODE_KP_ENTER:
+            key = mctl::KeyCode::Enter;
+            return true;
+        case SDL_SCANCODE_TAB:
+            key = mctl::KeyCode::Tab;
+            return true;
+        case SDL_SCANCODE_ESCAPE:
+            key = mctl::KeyCode::Escape;
+            return true;
+        case SDL_SCANCODE_UP:
+            key = mctl::KeyCode::Up;
+            return true;
+        case SDL_SCANCODE_DOWN:
+            key = mctl::KeyCode::Down;
+            return true;
+        case SDL_SCANCODE_LEFT:
+            key = mctl::KeyCode::Left;
+            return true;
+        case SDL_SCANCODE_RIGHT:
+            key = mctl::KeyCode::Right;
+            return true;
+        default:
+            return false;
+    }
+}
+
 enum class Action {
     None,
     PickServer,
@@ -97,6 +129,9 @@ enum class Action {
     GoBack,
     Rotate,
     OpenTouchpad,
+    OpenKeyboard,
+    ShowKeyboard,
+    SendKey,
     BackToMenu,
     OpenServerShare,
 };
@@ -120,7 +155,7 @@ enum class Look {
 enum class Icon {
     None,
     Touchpad,
-    Plus,
+    Keyboard,
 };
 
 struct Button {
@@ -142,6 +177,7 @@ enum class Screen {
     Pin,
     Menu,
     Pad,
+    Keyboard,
     Share,
 };
 
@@ -161,6 +197,7 @@ private:
     void layoutPin();
     void layoutMenu();
     void layoutPad();
+    void layoutKeyboard();
     void layoutShare();
     void layoutKeypad(float top, float bottom, Action digitAction,
                       Action backAction, bool includeDot);
@@ -174,6 +211,7 @@ private:
     void renderPin();
     void renderMenu();
     void renderPad();
+    void renderKeyboard();
     void renderShare();
     void drawButtons();
 
@@ -190,6 +228,9 @@ private:
                       bool isError = false);
     void showMenu();
     void beginConnect(const std::string& ip, uint16_t port);
+    void openKeyboard();
+    void startKeyboardInput();
+    void stopKeyboardInput();
 
     SDL_Window* window_ = nullptr;
     SDL_Renderer* renderer_ = nullptr;
@@ -237,6 +278,7 @@ private:
     Rect listArea_;
     Rect manualIpRect_;
     Rect padArea_;
+    Rect keyboardInputRect_;
     std::vector<Rect> pinBoxes_;
     int hiddenServers_ = 0;
 
@@ -312,6 +354,7 @@ bool App::init() {
 }
 
 void App::shutdown() {
+    stopKeyboardInput();
     share_.stop();
     discovery_.stop();
     net_.disconnect();
@@ -375,6 +418,7 @@ void App::frame() {
 // ---------------------------------------------------------------------------
 
 void App::showDiscover(const std::string& status, bool isError) {
+    stopKeyboardInput();
     screen_ = Screen::Discover;
     status_ = status.empty() ? "TAP A PC TO CONNECT" : status;
     statusError_ = isError;
@@ -394,6 +438,7 @@ void App::showDiscover(const std::string& status, bool isError) {
 }
 
 void App::showMenu() {
+    stopKeyboardInput();
     screen_ = Screen::Menu;
     hasPointer_ = false;
     hasPressedButton_ = false;
@@ -405,6 +450,7 @@ void App::showMenu() {
 }
 
 void App::beginConnect(const std::string& ip, uint16_t port) {
+    stopKeyboardInput();
     discovery_.stop();
 
     pad_.cancel();
@@ -421,6 +467,27 @@ void App::beginConnect(const std::string& ip, uint16_t port) {
     statusError_ = false;
 
     net_.connectTo(ip, port, deviceName_);
+}
+
+void App::openKeyboard() {
+    screen_ = Screen::Keyboard;
+    hasPointer_ = false;
+    hasPressedButton_ = false;
+    updateLayout();
+    startKeyboardInput();
+}
+
+void App::startKeyboardInput() {
+    if (screen_ == Screen::Keyboard && window_ != nullptr) {
+        SDL_StartTextInput();
+    }
+}
+
+void App::stopKeyboardInput() {
+    net_.resetTextInput();
+    if (window_ != nullptr && SDL_IsTextInputActive()) {
+        SDL_StopTextInput();
+    }
 }
 
 bool App::goBack() {
@@ -440,6 +507,7 @@ bool App::goBack() {
             showDiscover();
             return true;
         case Screen::Pad:
+        case Screen::Keyboard:
             // Going back keeps the connection; the menu is the hub.
             showMenu();
             return true;
@@ -580,6 +648,9 @@ void App::updateLayout() {
             break;
         case Screen::Pad:
             layoutPad();
+            break;
+        case Screen::Keyboard:
+            layoutKeyboard();
             break;
         case Screen::Share:
             layoutShare();
@@ -765,16 +836,15 @@ void App::layoutMenu() {
     touchpad.icon = Icon::Touchpad;
     buttons_.push_back(touchpad);
 
-    // Placeholder so the grid already shows where new controls will go.
-    Button more;
-    more.rect = Rect{gridX + tileSize + gap, gridTop, tileSize, tileSize};
-    more.label = "MORE";
-    more.sub = "COMING SOON";
-    more.textScale = fsBody_;
-    more.look = Look::Tile;
-    more.icon = Icon::Plus;
-    more.enabled = false;
-    buttons_.push_back(more);
+    Button keyboard;
+    keyboard.rect = Rect{gridX + tileSize + gap, gridTop, tileSize, tileSize};
+    keyboard.action = Action::OpenKeyboard;
+    keyboard.label = "KEYBOARD";
+    keyboard.sub = "TYPE + KEYS";
+    keyboard.textScale = fsBody_;
+    keyboard.look = Look::Tile;
+    keyboard.icon = Icon::Keyboard;
+    buttons_.push_back(keyboard);
 }
 
 void App::layoutPad() {
@@ -832,6 +902,88 @@ void App::layoutPad() {
     plus.textScale = fsTitle_;
     plus.look = Look::Ghost;
     buttons_.push_back(plus);
+}
+
+void App::layoutKeyboard() {
+    const float m = 14.0f * u_;
+
+    Button back;
+    back.rect = Rect{m, 12.0f * u_, 44.0f * u_, 44.0f * u_};
+    back.action = Action::BackToMenu;
+    back.label = "<";
+    back.textScale = fsTitle_;
+    back.look = Look::Ghost;
+    buttons_.push_back(back);
+
+    Button close;
+    close.rect = Rect{width_ - m - 44.0f * u_, 12.0f * u_, 44.0f * u_,
+                      44.0f * u_};
+    close.action = Action::Disconnect;
+    close.label = "X";
+    close.textScale = fsBody_ + 1;
+    close.look = Look::Ghost;
+    buttons_.push_back(close);
+
+    const bool landscape = width_ > height_;
+    const float gap = 8.0f * u_;
+    const float fullWidth = width_ - 2.0f * m;
+    const float inputWidth = landscape ? fullWidth * 0.25f : fullWidth;
+    const float inputHeight = (landscape ? 52.0f : 62.0f) * u_;
+    keyboardInputRect_ =
+        Rect{m, (landscape ? 68.0f : 74.0f) * u_, inputWidth, inputHeight};
+    Button input;
+    input.rect = keyboardInputRect_;
+    input.action = Action::ShowKeyboard;
+    input.label = "TAP HERE TO TYPE";
+    input.textScale = landscape ? fsSmall_ : fsBody_;
+    input.look = Look::Secondary;
+    buttons_.push_back(input);
+
+    // Landscape keeps every special key beside the IME target, above the area
+    // covered by the phone keyboard. Portrait uses two larger rows below it.
+    const int columns = landscape ? 8 : 4;
+    const float gridX =
+        landscape ? keyboardInputRect_.x + keyboardInputRect_.w + gap : m;
+    const float gridY =
+        landscape ? keyboardInputRect_.y
+                  : keyboardInputRect_.y + keyboardInputRect_.h + 12.0f * u_;
+    const float gridWidth = landscape ? width_ - m - gridX : fullWidth;
+    const float keyWidth =
+        (gridWidth - static_cast<float>(columns - 1) * gap) /
+        static_cast<float>(columns);
+    const float keyHeight = inputHeight;
+
+    static const char* const labels[8] = {
+        "BACKSPACE", "ENTER", "TAB", "ESC", "LEFT", "DOWN", "UP", "RIGHT",
+    };
+    static const mctl::KeyCode keys[8] = {
+        mctl::KeyCode::Backspace, mctl::KeyCode::Enter,
+        mctl::KeyCode::Tab,       mctl::KeyCode::Escape,
+        mctl::KeyCode::Left,      mctl::KeyCode::Down,
+        mctl::KeyCode::Up,        mctl::KeyCode::Right,
+    };
+
+    for (int i = 0; i < 8; ++i) {
+        const int column = i % columns;
+        const int row = i / columns;
+        Button key;
+        key.rect = Rect{gridX + static_cast<float>(column) * (keyWidth + gap),
+                        gridY + static_cast<float>(row) * (keyHeight + gap),
+                        keyWidth, keyHeight};
+        key.action = Action::SendKey;
+        key.value = static_cast<int>(keys[i]);
+        key.label = labels[i];
+        key.textScale = i == 0 ? fsTiny_ : fsSmall_;
+        key.look = Look::Secondary;
+        buttons_.push_back(key);
+    }
+
+    const SDL_Rect inputRect{
+        static_cast<int>(std::lround(keyboardInputRect_.x)),
+        static_cast<int>(std::lround(keyboardInputRect_.y)),
+        static_cast<int>(std::lround(keyboardInputRect_.w)),
+        static_cast<int>(std::lround(keyboardInputRect_.h))};
+    SDL_SetTextInputRect(&inputRect);
 }
 
 void App::layoutShare() {
@@ -1119,6 +1271,18 @@ void App::activate(const Button& button) {
             moveAccY_ = 0.0f;
             break;
 
+        case Action::OpenKeyboard:
+            openKeyboard();
+            break;
+
+        case Action::ShowKeyboard:
+            startKeyboardInput();
+            break;
+
+        case Action::SendKey:
+            net_.sendKey(static_cast<mctl::KeyCode>(button.value));
+            break;
+
         case Action::BackToMenu:
             showMenu();
             break;
@@ -1154,6 +1318,7 @@ void App::handleEvent(const SDL_Event& event) {
             break;
 
         case SDL_APP_WILLENTERBACKGROUND:
+            stopKeyboardInput();
             // Never leave a drag latched on the PC while we are suspended.
             pad_.cancel();
             flushPad();
@@ -1165,6 +1330,7 @@ void App::handleEvent(const SDL_Event& event) {
 
         case SDL_APP_DIDENTERFOREGROUND:
             net_.resume();
+            if (screen_ == Screen::Keyboard) startKeyboardInput();
             if (screen_ == Screen::Share) {
                 share_.start();
                 shareUrls_ = share_.urls();
@@ -1215,13 +1381,38 @@ void App::handleEvent(const SDL_Event& event) {
             }
             break;
 
-        case SDL_KEYDOWN:
-            if (event.key.repeat) break;
-            if (event.key.keysym.scancode == SDL_SCANCODE_AC_BACK ||
-                event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
-                if (!goBack()) {
-                    running_ = false;
+        case SDL_KEYDOWN: {
+            const SDL_Scancode scancode = event.key.keysym.scancode;
+            if (scancode == SDL_SCANCODE_AC_BACK) {
+                if (!event.key.repeat && !goBack()) running_ = false;
+                break;
+            }
+
+            if (screen_ == Screen::Keyboard) {
+                mctl::KeyCode key = mctl::KeyCode::Backspace;
+                if (remoteKeyForScancode(scancode, key)) {
+                    net_.sendKey(key);
+                    break;
                 }
+            }
+
+            if (!event.key.repeat && scancode == SDL_SCANCODE_ESCAPE) {
+                if (!goBack()) running_ = false;
+            }
+            break;
+        }
+
+        case SDL_TEXTINPUT:
+            if (screen_ == Screen::Keyboard && net_.ready()) {
+                // SDL also emits key events for ASCII control characters. Send
+                // those through KEYDOWN only, avoiding duplicate Enter/Tab input.
+                std::string text;
+                for (const unsigned char c : std::string(event.text.text)) {
+                    if (c >= 0x20u && c != 0x7Fu) {
+                        text.push_back(static_cast<char>(c));
+                    }
+                }
+                net_.sendText(text);
             }
             break;
 
@@ -1256,6 +1447,9 @@ void App::render() {
             break;
         case Screen::Pad:
             renderPad();
+            break;
+        case Screen::Keyboard:
+            renderKeyboard();
             break;
         case Screen::Share:
             renderShare();
@@ -1545,6 +1739,32 @@ void App::renderPad() {
              latencyColor);
 }
 
+void App::renderKeyboard() {
+    const float m = 14.0f * u_;
+    const float nameX = m + 52.0f * u_;
+    const std::string name =
+        net_.serverName().empty() ? "REMOTE PC" : net_.serverName();
+
+    ui::text(renderer_, nameX, 15.0f * u_,
+             fitText(name, width_ - nameX - m - 52.0f * u_, fsBody_), fsBody_,
+             ui::colors::text);
+
+    const float subY = 15.0f * u_ + ui::textHeight(fsBody_) + 5.0f * u_;
+    const float dot = 7.0f * u_;
+    ui::fillRoundedRect(
+        renderer_,
+        Rect{nameX, subY + (ui::textHeight(fsTiny_) - dot) * 0.5f, dot, dot},
+        dot * 0.5f, ui::colors::success);
+    ui::text(renderer_, nameX + dot + 6.0f * u_, subY, "KEYBOARD PAIRED",
+             fsTiny_, ui::colors::success);
+
+    ui::textCentered(
+        renderer_,
+        Rect{m, 58.0f * u_, width_ - 2.0f * m, ui::textHeight(fsTiny_)},
+        fitText("TEXT GOES DIRECTLY TO YOUR PC", width_ - 2.0f * m, fsTiny_),
+        fsTiny_, ui::colors::textMuted);
+}
+
 void App::renderShare() {
     const float m = 18.0f * u_;
 
@@ -1745,21 +1965,32 @@ void App::drawButtons() {
                     Rect{padRect.centerX() - cursor * 0.5f,
                          padRect.centerY() - cursor * 0.5f, cursor, cursor},
                     cursor * 0.5f, iconColor);
-            } else if (button.icon == Icon::Plus) {
-                const float thickness = std::max(2.0f * u_, iconSize * 0.10f);
-                const float plusCenterY = iconY + iconSize * 0.37f;
-                ui::fillRoundedRect(
-                    renderer_,
-                    Rect{iconX + iconSize * 0.12f,
-                         plusCenterY - thickness * 0.5f, iconSize * 0.76f,
-                         thickness},
-                    thickness * 0.5f, iconColor);
-                ui::fillRoundedRect(
-                    renderer_,
-                    Rect{iconX + iconSize * 0.5f - thickness * 0.5f,
-                         plusCenterY - iconSize * 0.26f, thickness,
-                         iconSize * 0.52f},
-                    thickness * 0.5f, iconColor);
+            } else if (button.icon == Icon::Keyboard) {
+                const float keyboardH = iconSize * 0.68f;
+                const Rect keyboardRect{iconX, iconY, iconSize, keyboardH};
+                const float iconRadius = iconSize * 0.12f;
+                ui::fillRoundedRect(renderer_, keyboardRect, iconRadius,
+                                    iconColor);
+                ui::fillRoundedRect(renderer_,
+                                    inset(keyboardRect, 2.0f * u_),
+                                    std::max(0.0f, iconRadius - 2.0f * u_), fill);
+
+                const float keyGap = iconSize * 0.055f;
+                const float keySize = iconSize * 0.12f;
+                for (int row = 0; row < 2; ++row) {
+                    for (int column = 0; column < 4; ++column) {
+                        ui::fillRoundedRect(
+                            renderer_,
+                            Rect{iconX + iconSize * 0.12f +
+                                     static_cast<float>(column) *
+                                         (keySize + keyGap),
+                                 iconY + iconSize * 0.13f +
+                                     static_cast<float>(row) *
+                                         (keySize + keyGap),
+                                 keySize, keySize},
+                            keySize * 0.18f, iconColor);
+                    }
+                }
             }
 
             const float labelY = button.rect.y + button.rect.h * 0.66f;

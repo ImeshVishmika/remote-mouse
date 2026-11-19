@@ -45,6 +45,8 @@ enum class MsgType : uint8_t {
     Wheel = 0x12,
     Ping = 0x13,
     Pong = 0x14,
+    Text = 0x15,
+    Key = 0x16,
     Error = 0x20,
 };
 
@@ -52,6 +54,17 @@ enum class MouseButton : uint8_t {
     Left = 1,
     Right = 2,
     Middle = 3,
+};
+
+enum class KeyCode : uint8_t {
+    Backspace = 1,
+    Enter = 2,
+    Tab = 3,
+    Escape = 4,
+    Up = 5,
+    Down = 6,
+    Left = 7,
+    Right = 8,
 };
 
 enum class ErrorCode : uint8_t {
@@ -376,6 +389,37 @@ inline std::vector<uint8_t> makeWheel(int16_t dx, int16_t dy) {
 inline bool parseWheel(const Frame& frame, int16_t& dx, int16_t& dy) {
     Reader r(frame.payload.data(), frame.payload.size());
     return r.i16(dx) && r.i16(dy);
+}
+
+// A run of UTF-8 text. The phone sends printable text here; navigation and
+// editing keys use the separate Key message so IME events are not duplicated.
+inline std::vector<uint8_t> makeText(const std::string& utf8) {
+    Writer w(MsgType::Text, utf8.size() + 2);
+    w.str(utf8);
+    return w.finish();
+}
+
+inline bool parseText(const Frame& frame, std::string& utf8) {
+    Reader r(frame.payload.data(), frame.payload.size());
+    return r.str(utf8) && r.atEnd() && !utf8.empty();
+}
+
+inline std::vector<uint8_t> makeKey(KeyCode key) {
+    Writer w(MsgType::Key, 1);
+    w.u8(static_cast<uint8_t>(key));
+    return w.finish();
+}
+
+inline bool parseKey(const Frame& frame, KeyCode& key) {
+    Reader r(frame.payload.data(), frame.payload.size());
+    uint8_t value = 0;
+    if (!r.u8(value) || !r.atEnd() ||
+        value < static_cast<uint8_t>(KeyCode::Backspace) ||
+        value > static_cast<uint8_t>(KeyCode::Right)) {
+        return false;
+    }
+    key = static_cast<KeyCode>(value);
+    return true;
 }
 
 inline std::vector<uint8_t> makePing(uint32_t token) {

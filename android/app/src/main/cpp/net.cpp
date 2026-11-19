@@ -1,5 +1,7 @@
 #include "net.h"
 
+#include "utf8.h"
+
 #include <algorithm>
 #include <arpa/inet.h>
 #include <cerrno>
@@ -43,6 +45,7 @@ void NetClient::reset() {
     serverName_.clear();
     pinInUse_ = 0;
     attemptsLeft_ = 0;
+    pendingHighSurrogate_ = 0;
     deadlineMs_ = 0;
     lastPingMs_ = 0;
     lastPongMs_ = 0;
@@ -108,6 +111,7 @@ void NetClient::disconnect(const std::string& reason) {
     deadlineMs_ = 0;
     pendingPingToken_ = 0;
     pendingPingMs_ = 0;
+    pendingHighSurrogate_ = 0;
     if (!reason.empty()) pushEvent(NetEvent::Type::Closed, reason);
 }
 
@@ -206,6 +210,42 @@ void NetClient::sendWheel(int dx, int dy) {
     if (clampedX == 0 && clampedY == 0) return;
     queue(mctl::makeWheel(static_cast<int16_t>(clampedX),
                           static_cast<int16_t>(clampedY)));
+}
+
+void NetClient::sendText(const std::string& utf8) {
+    if (!ready() || utf8.empty()) return;
+
+    const std::string normalized =
+        mctl::normalizeAndroidText(utf8, pendingHighSurrogate_);
+    if (normalized.empty()) return;
+
+    // SDL text events are small, but split defensively without cutting through
+    // a UTF-8 continuation sequence if another platform supplies a longer run.
+    size_t offset = 0;
+    while (offset < normalized.size()) {
+        size_t end =
+            std::min(offset + mctl::kMaxStringLength, normalized.size());
+        if (end < normalized.size()) {
+            while (end > offset &&
+                   (static_cast<unsigned char>(normalized[end]) & 0xC0u) ==
+                       0x80u) {
+                --end;
+            }
+            if (end == offset) return;  // malformed overlong sequence
+        }
+        queue(mctl::makeText(normalized.substr(offset, end - offset)));
+        offset = end;
+    }
+}
+
+void NetClient::sendKey(mctl::KeyCode key) {
+    const uint8_t value = static_cast<uint8_t>(key);
+    if (!ready() || value < static_cast<uint8_t>(mctl::KeyCode::Backspace) ||
+        value > static_cast<uint8_t>(mctl::KeyCode::Right)) {
+        return;
+    }
+    pendingHighSurrogate_ = 0;
+    queue(mctl::makeKey(key));
 }
 
 std::vector<NetEvent> NetClient::takeEvents() {

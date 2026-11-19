@@ -47,6 +47,8 @@ clients cannot break older servers.
 | `0x12` | `WHEEL` | client → server | `i16 dx`, `i16 dy` |
 | `0x13` | `PING` | client → server | `u32 token` |
 | `0x14` | `PONG` | server → client | `u32 token` |
+| `0x15` | `TEXT` | client → server | `str text` (UTF-8) |
+| `0x16` | `KEY` | client → server | `u8 key` |
 | `0x20` | `ERROR` | server → client | `u8 code`, `str message` |
 
 `button`: `1` = left, `2` = right, `3` = middle. `pressed`: `1`/`0`, an
@@ -60,6 +62,29 @@ for scrolling right. The server clamps each axis to ±30 notches per message.
 movement by its own sensitivity and accumulates sub-pixel remainders; the
 server optionally applies its `--sensitivity` factor on top.
 
+`TEXT` contains a non-empty run of printable UTF-8 text (at most 255 bytes).
+The Windows server converts it to UTF-16 and uses `KEYEVENTF_UNICODE`, so typing
+does not depend on the active Windows keyboard layout. Typed text is never
+written to the server log.
+
+`KEY` represents one press-and-release action:
+
+| Value | Key |
+| --- | --- |
+| 1 | Backspace |
+| 2 | Enter |
+| 3 | Tab |
+| 4 | Escape |
+| 5 | Up arrow |
+| 6 | Down arrow |
+| 7 | Left arrow |
+| 8 | Right arrow |
+
+Editing and navigation keys are separate from `TEXT` so Android IME key events
+are not sent twice. Both messages were added within protocol version 1: an old
+version-1 server ignores them, so keyboard use requires the updated server
+bundled with the keyboard-enabled app.
+
 ## Session flow
 
 ```
@@ -69,7 +94,7 @@ client                                   server
   | ---------------- AUTH ------------------> |
   | <-- AUTH_RESULT ok / wrong PIN --------- |
   | ============ ready for input =========== |
-  | ---------- MOVE / BUTTON / WHEEL --------> |
+  | ----- MOVE / BUTTON / WHEEL / TEXT / KEY -> |
   | ---------------- PING ------------------> |
   | <--------------- PONG ------------------- |
 ```
@@ -107,6 +132,18 @@ magic        v  t   len     123456       len 5  PHONE
 
 ```
 4D 43 54 4C  01 10  04 00   FD FF  02 00
+```
+
+`TEXT`, text `"A"`:
+
+```
+4D 43 54 4C  01 15  03 00   01 00 41
+```
+
+`KEY`, Backspace:
+
+```
+4D 43 54 4C  01 16  01 00   01
 ```
 
 ## Discovery

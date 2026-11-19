@@ -11,13 +11,14 @@
 
 #include "config.h"
 #include "connection.h"
+#include "keyboard.h"
 #include "mouse.h"
 #include "net_types.h"
 
 class DiscoveryResponder;
 
 // Single-device TCP server: accepts one phone, pairs it with a PIN, then turns
-// framed mouse messages into Windows input events.
+// framed mouse and keyboard messages into Windows input events.
 // Start/stop, PIN changes and block-list management are thread-safe and can be
 // driven from either the console or the GUI.
 class Server {
@@ -73,6 +74,7 @@ private:
 
     ServerConfig config_;
     MouseInjector mouse_;
+    KeyboardInjector keyboard_;
     net::WinsockGuard winsock_;
     socket_t listener_ = kInvalidSocket;
     std::thread consoleThread_;

@@ -31,6 +31,7 @@ unsigned msgTypeValue(mctl::MsgType type) {
 Server::Server(ServerConfig config)
     : config_(std::move(config)),
       mouse_(config_.dryRun, config_.sensitivity),
+      keyboard_(config_.dryRun),
       winsock_() {
     if (!winsock_.ok()) {
         logx::error("Winsock startup failed: %s",
@@ -413,6 +414,8 @@ void Server::pumpInput(Connection& connection, const std::string& peer) {
     uint64_t moves = 0;
     uint64_t buttons = 0;
     uint64_t wheels = 0;
+    uint64_t textMessages = 0;
+    uint64_t keys = 0;
 
     while (!stopping() && !kick_.load()) {
         mctl::Frame frame;
@@ -474,6 +477,26 @@ void Server::pumpInput(Connection& connection, const std::string& peer) {
                 }
                 break;
             }
+            case mctl::MsgType::Text: {
+                std::string text;
+                if (!mctl::parseText(frame, text)) break;
+                keyboard_.typeText(text);
+                ++textMessages;
+                // Deliberately do not log the text or its contents.
+                if (config_.verbose) logx::info("keyboard text event");
+                break;
+            }
+            case mctl::MsgType::Key: {
+                mctl::KeyCode key = mctl::KeyCode::Backspace;
+                if (!mctl::parseKey(frame, key)) break;
+                keyboard_.pressKey(key);
+                ++keys;
+                if (config_.verbose) {
+                    logx::info("keyboard key %u",
+                               static_cast<unsigned>(static_cast<uint8_t>(key)));
+                }
+                break;
+            }
             case mctl::MsgType::Ping: {
                 uint32_t token = 0;
                 if (mctl::parseToken(frame, token)) {
@@ -490,11 +513,13 @@ void Server::pumpInput(Connection& connection, const std::string& peer) {
         std::chrono::duration<double>(Clock::now() - started).count();
     logx::event(
         "Session summary: %.1fs, %llu packets, %llu moves, %llu button events, "
-        "%llu wheel notches",
+        "%llu wheel notches, %llu text events, %llu key events",
         seconds, static_cast<unsigned long long>(packets),
         static_cast<unsigned long long>(moves),
         static_cast<unsigned long long>(buttons),
-        static_cast<unsigned long long>(wheels));
+        static_cast<unsigned long long>(wheels),
+        static_cast<unsigned long long>(textMessages),
+        static_cast<unsigned long long>(keys));
 }
 
 void Server::consoleLoop() {

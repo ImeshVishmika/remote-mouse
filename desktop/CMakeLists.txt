@@ -2,6 +2,7 @@ add_executable(remote_mouse_server
     src/main.cpp
     src/server.cpp
     src/mouse.cpp
+    src/keyboard.cpp
     src/discovery.cpp
     src/config.cpp
     src/log.cpp

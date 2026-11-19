@@ -1,13 +1,13 @@
 # Remote Mouse
 
-Turn an Android phone into a wireless touchpad for a Windows PC. A tiny C++
-server runs in the tray-less console on the PC, injects real mouse input with
+Turn an Android phone into a wireless touchpad and keyboard for a Windows PC.
+A tiny C++ server runs on the PC, injects real mouse and keyboard input with
 `SendInput`, and the phone talks to it over your local WiFi.
 
 ```
   Android phone (SDL2 native activity)              Windows PC (Win32)
   ┌───────────────────────────────┐                ┌──────────────────────────┐
-  │ touch gestures → PadEvents    │  TCP 47824     │ remote_mouse_server.exe  │
+  │ touch gestures + phone IME    │  TCP 47824     │ remote_mouse_server.exe  │
   │ NetClient (framed protocol)   │ ─────────────► │ auth → SendInput/SetPos  │
   │ UDP discovery probe           │ ◄───────────── │ UDP 47824 responder      │
   └───────────────────────────────┘                └──────────────────────────┘
@@ -22,6 +22,8 @@ the same network.
 * Two-finger tap = right click, three-finger tap = middle click.
 * Two-finger vertical drag = natural scrolling.
 * Adjustable cursor sensitivity on the touchpad screen.
+* Phone-to-PC typing with Unicode text, Backspace, Enter, Tab, Escape and arrow
+  keys through the Android on-screen keyboard.
 * Every screen follows the device's auto-rotation; the touchpad can also be
   locked to portrait or landscape.
 * Zero-config discovery by UDP broadcast, plus a manual IPv4 entry fallback.
@@ -52,7 +54,8 @@ the same network.
 * The phone and the PC on the same WiFi/LAN.
 
 SDL2 is **not** vendored. The scripts fetch release `2.30.9` into
-`third_party/SDL2`, which the Android build expects. Local Android builds also
+`third_party/SDL2` and apply upstream SDL PR #15155's Android API 30+ Backspace
+fix, which the Android build expects. Local Android builds also
 need **Zig 0.13.0** on `PATH` to cross-compile the Windows server embedded in
 the APK; the PowerShell build accepts `-Zig C:\path\to\zig.exe`. Cloud builds
 install the pinned Zig version automatically.
@@ -130,7 +133,7 @@ remote_mouse_server.exe [options]
   --pin NNNNNN        fixed pairing PIN (default: random each run)
   --name TEXT         name shown on the phone (default: computer name)
   --sensitivity F     cursor multiplier (0.1-10.0, default 1.0)
-  --dry-run           log input without moving the real cursor
+  --dry-run           log input without injecting real mouse/keyboard input
   --no-discovery      do not answer UDP probes (manual IP still works)
   --verbose, -v       log every input event
   --version           print the protocol version
@@ -257,8 +260,8 @@ browser are all this route needs.
 3. Tap the PC in **AVAILABLE PCS**.
 4. Type the PIN on the keypad. Six digits submit automatically.
 5. The **control menu** appears once the server accepts the PIN.
-6. Tap the **TOUCHPAD** tile to start driving the cursor. `<` returns to the
-   menu without dropping the connection.
+6. Tap the **TOUCHPAD** tile to start driving the cursor, or **KEYBOARD** to
+   type on the PC. `<` returns to the menu without dropping the connection.
 
 | Gesture | Action |
 | --- | --- |
@@ -273,8 +276,19 @@ browser are all this route needs.
 | `<` in the top-left | Back to the control menu |
 | `X` in the top-right | Disconnect |
 
-Android's back button goes back one screen (touchpad → menu → disconnect) and
-exits from the server list.
+Android's back button goes back one screen (touchpad/keyboard → menu →
+disconnect) and exits from the server list.
+
+### Keyboard
+
+1. Click the PC app where you want to type, then tap **KEYBOARD** on the phone.
+2. Use the Android on-screen keyboard normally. Text is sent directly to the PC;
+   the app does not display or log what you type.
+3. Use the on-screen **BACKSPACE**, **ENTER**, **TAB**, **ESC**, and arrow buttons
+   for those keys. Tap **TAP HERE TO TYPE** if you dismissed the phone keyboard
+   and want to reopen it.
+4. Keyboard support requires the updated Windows server bundled in this APK.
+   Re-download it through **PC SETUP** if an older server ignores typing.
 
 Each server restart generates a new PIN. Use `--pin` for a fixed one while
 testing.
@@ -309,7 +323,8 @@ Without `--dry-run` the simulator really moves the cursor, clicks and scrolls.
 | "CONNECT FAILED" | Wrong IP, server not running, different subnet, or the port was changed. |
 | "WRONG PIN" | Use `p` in the server console to reprint it. Three wrong tries close the connection. |
 | "Another device is already connected" | The server accepts one phone at a time; press `k` on the PC console to kick it. |
-| Clicks do nothing in elevated apps | Windows blocks input from non-elevated processes. Run the server as administrator if you need to control admin windows. |
+| Clicks or keys do nothing in elevated apps | Windows blocks input from non-elevated processes. Run the server as administrator if you need to control admin windows. |
+| Touchpad works but keyboard does not | Update the PC server through **PC SETUP**; older version-1 servers ignore keyboard messages. |
 | Cursor drifts or is too slow | Adjust `SENS` in the app or the server's `--sensitivity`. |
 | Emulator can't discover the host | Use manual IP `10.0.2.2`. |
 
@@ -318,9 +333,12 @@ probes and every input event.
 
 ## Security and limitations
 
-* **Plaintext on the LAN.** The PIN and all traffic are unencrypted. Anyone who
-  can sniff the network can read the PIN or inject input. Use this only on a
-  network you trust, and stop the server when you are done.
+* **Plaintext on the LAN.** The PIN, typed text and all other traffic are
+  unencrypted. Anyone who can sniff the network can read them or inject input.
+  Use this only on a network you trust, avoid typing passwords on untrusted
+  networks, and stop the server when you are done.
+* The server never writes typed text to its console or GUI log, including in
+  `--verbose` and `--dry-run` modes.
 * The PIN limits each *connection* to 3 tries with a 750 ms penalty, but a new
   TCP connection resets that counter. This is a convenience lock, not a
   hardened authentication system.

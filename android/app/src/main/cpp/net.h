@@ -38,6 +38,9 @@ public:
     void sendMove(int dx, int dy);
     void sendButton(uint8_t button, bool pressed);
     void sendWheel(int dx, int dy);
+    void sendText(const std::string& utf8);
+    void sendKey(mctl::KeyCode key);
+    void resetTextInput() { pendingHighSurrogate_ = 0; }
 
     bool active() const { return fd_ >= 0; }
     bool ready() const;
@@ -77,6 +80,7 @@ private:
     std::string serverName_;
     uint32_t pinInUse_ = 0;
     uint8_t attemptsLeft_ = 0;
+    uint16_t pendingHighSurrogate_ = 0;
 
     uint64_t deadlineMs_ = 0;
     uint64_t lastPingMs_ = 0;
