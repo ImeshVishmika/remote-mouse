@@ -93,7 +93,7 @@ const char* keyName(mctl::KeyCode key) {
         case mctl::KeyCode::Left: return "Left";
         case mctl::KeyCode::Right: return "Right";
         case mctl::keyCode::Space:return "Space";
-        case mctl::KeyCode::Delete:return "Delete"
+        case mctl::KeyCode::Delete:return "Delete";
     }
     return "unknown";
 }
