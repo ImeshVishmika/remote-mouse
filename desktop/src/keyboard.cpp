@@ -76,7 +76,7 @@ WORD virtualKey(mctl::KeyCode key) {
         case mctl::KeyCode::Left: return VK_LEFT;
         case mctl::KeyCode::Right: return VK_RIGHT;
         case mctl::KeyCode::Space: return VK_SPACE;
-        case mctl::KeyCode::Delete: return VK_DELETE
+        case mctl::KeyCode::Delete: return VK_DELETE;
     }
     return 0;
 }

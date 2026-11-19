@@ -959,9 +959,8 @@ void App::layoutKeyboard() {
     static const mctl::KeyCode keys[8] = {
         mctl::KeyCode::Backspace, mctl::KeyCode::Enter,
         mctl::KeyCode::Up,        mctl::KeyCode::Tab,       
-        mctl::KeyCode::Escape,
-        mctl::KeyCode::Left,      mctl::KeyCode::Down,
-        mctl::KeyCode::Right,
+        mctl::KeyCode::Escape,    mctl::KeyCode::Left,      
+        mctl::KeyCode::Down,      mctl::KeyCode::Right,
         mctl::KeyCode::Space,     mctl::KeyCode::Delete
     };
 
