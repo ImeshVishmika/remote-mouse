@@ -954,13 +954,15 @@ void App::layoutKeyboard() {
     const float keyHeight = inputHeight;
 
     static const char* const labels[8] = {
-        "BACKSPACE", "ENTER", "TAB", "ESC", "LEFT", "DOWN", "UP", "RIGHT",
+        "BACKSPACE", "ENTER", "TAB", "ESC", "LEFT", "DOWN", "UP", "RIGHT","SPACE","DELETE"
     };
     static const mctl::KeyCode keys[8] = {
         mctl::KeyCode::Backspace, mctl::KeyCode::Enter,
-        mctl::KeyCode::Tab,       mctl::KeyCode::Escape,
+        mctl::KeyCode::Up,        mctl::KeyCode::Tab,       
+        mctl::KeyCode::Escape,
         mctl::KeyCode::Left,      mctl::KeyCode::Down,
-        mctl::KeyCode::Up,        mctl::KeyCode::Right,
+        mctl::KeyCode::Right,
+        mctl::KeyCode::Space,     mctl::KeyCode::Delete
     };
 
     for (int i = 0; i < 8; ++i) {
