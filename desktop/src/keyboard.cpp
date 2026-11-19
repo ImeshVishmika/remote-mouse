@@ -193,7 +193,8 @@ void KeyboardInjector::pressKey(mctl::KeyCode key) {
     const bool extended = key == mctl::KeyCode::Up ||
                           key == mctl::KeyCode::Down ||
                           key == mctl::KeyCode::Left ||
-                          key == mctl::KeyCode::Right;
+                          key == mctl::KeyCode::Right ||
+                          key == mctl::KeyCode::Delete;
     const DWORD flags = extended ? KEYEVENTF_EXTENDEDKEY : 0;
     const WORD scan =
         static_cast<WORD>(MapVirtualKeyW(vk, MAPVK_VK_TO_VSC));

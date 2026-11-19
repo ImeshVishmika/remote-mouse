@@ -241,7 +241,7 @@ void NetClient::sendText(const std::string& utf8) {
 void NetClient::sendKey(mctl::KeyCode key) {
     const uint8_t value = static_cast<uint8_t>(key);
     if (!ready() || value < static_cast<uint8_t>(mctl::KeyCode::Backspace) ||
-        value > static_cast<uint8_t>(mctl::KeyCode::Right)) {
+        value > static_cast<uint8_t>(mctl::KeyCode::Delete)) {
         return;
     }
     pendingHighSurrogate_ = 0;

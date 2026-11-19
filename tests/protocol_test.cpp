@@ -151,7 +151,7 @@ void testRoundTrips() {
     }
     {
         for (uint8_t value = static_cast<uint8_t>(mctl::KeyCode::Backspace);
-             value <= static_cast<uint8_t>(mctl::KeyCode::Right); ++value) {
+             value <= static_cast<uint8_t>(mctl::KeyCode::Delete); ++value) {
             const std::vector<uint8_t> frame =
                 mctl::makeKey(static_cast<mctl::KeyCode>(value));
             mctl::FrameParser parser;
@@ -313,7 +313,7 @@ void testTruncatedPayloads() {
     key.payload = {0};
     mctl::KeyCode keyCode = mctl::KeyCode::Backspace;
     CHECK(!mctl::parseKey(key, keyCode));
-    key.payload = {9};
+    key.payload = {11};
     CHECK(!mctl::parseKey(key, keyCode));
     key.payload = {static_cast<uint8_t>(mctl::KeyCode::Enter), 0};
     CHECK(!mctl::parseKey(key, keyCode));

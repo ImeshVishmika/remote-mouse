@@ -65,6 +65,8 @@ enum class KeyCode : uint8_t {
     Down = 6,
     Left = 7,
     Right = 8,
+    Space = 9,
+    Delete = 10,
 };
 
 enum class ErrorCode : uint8_t {
@@ -415,7 +417,7 @@ inline bool parseKey(const Frame& frame, KeyCode& key) {
     uint8_t value = 0;
     if (!r.u8(value) || !r.atEnd() ||
         value < static_cast<uint8_t>(KeyCode::Backspace) ||
-        value > static_cast<uint8_t>(KeyCode::Right)) {
+        value > static_cast<uint8_t>(KeyCode::Delete)) {
         return false;
     }
     key = static_cast<KeyCode>(value);

@@ -108,6 +108,13 @@ bool remoteKeyForScancode(SDL_Scancode scancode, mctl::KeyCode& key) {
         case SDL_SCANCODE_RIGHT:
             key = mctl::KeyCode::Right;
             return true;
+        case SDL_SCANCODE_SPACE:
+            key = mctl::KeyCode::Space;
+            return true;
+        case SDL_SCANCODE_DELETE:
+            key=mctl::KeyCode::Delete;
+            return true;
+
         default:
             return false;
     }
@@ -953,10 +960,10 @@ void App::layoutKeyboard() {
         static_cast<float>(columns);
     const float keyHeight = inputHeight;
 
-    static const char* const labels[8] = {
+    static const char* const labels[10] = {
         "BACKSPACE", "ENTER", "TAB", "ESC", "LEFT", "DOWN", "UP", "RIGHT","SPACE","DELETE"
     };
-    static const mctl::KeyCode keys[8] = {
+    static const mctl::KeyCode keys[10] = {
         mctl::KeyCode::Backspace, mctl::KeyCode::Enter,
         mctl::KeyCode::Up,        mctl::KeyCode::Tab,       
         mctl::KeyCode::Escape,    mctl::KeyCode::Left,      
@@ -964,7 +971,7 @@ void App::layoutKeyboard() {
         mctl::KeyCode::Space,     mctl::KeyCode::Delete
     };
 
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < 10; ++i) {
         const int column = i % columns;
         const int row = i / columns;
         Button key;

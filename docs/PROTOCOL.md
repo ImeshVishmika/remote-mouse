@@ -25,6 +25,8 @@ Every TCP message starts with an 8-byte header:
 | 5 | 1 | message type |
 | 6 | 2 | payload length in bytes (u16, little-endian) |
 | 8 | n | payload |
+9  | Space
+10 | Delete
 
 Limits:
 
